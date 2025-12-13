@@ -1,56 +1,56 @@
 # Kaggle Competition Experiment Template
 
-このリポジトリは **Kaggle コンペ用の実験管理テンプレートレポジトリ**です。
+このリポジトリは **Kaggle コンペ用の実験管理テンプレート**です。
 Claude Code を前提に、**データ取得 → EDA → 調査（論文/類似コンペ） → 実験（exp管理） → 提出**までを、再現性高く回すためのルールと作業手順をまとめています。
 
-tools以下では、時間測定のコードと、フォルダをkaggle datasetにアップロードするshellスクリプトが入ってるので使ってください。
+`tools/` 以下には、時間測定（提出監視など）スクリプトと、フォルダを Kaggle Dataset にアップロードしてバージョン管理するシェルが入っています。必要に応じて使ってください。
+
+詳細はこの記事に記載してあります。[リンク](https://zenn.dev/sugupoko/articles/1c985219823589)
 
 ---
 
-## 0. このテンプレの使い方（最初にやること）
+# 使い方
 
-### 0-1. テンプレをクローンする
+## Quickstart
 
-```bash
-git clone <このリポジトリURL>
-cd <repo>
-```
+最短で「このレポでコンペを回し始める」ための手順です。迷ったらここだけ順に潰してください。
 
-### 0-2. 指示書の冒頭に「対象コンペURL」を記入する（重要）
+### 1) 対象コンペを確定する
 
-このテンプレは、**対象コンペが毎回変わる**前提です。
-作業開始前に、KAGGLE_DIRECTION.md（指示書）の最初に **対象コンペのURL** を記入してください。
+* `KAGGLE_DIRECTION.md` の冒頭に **対象コンペURL** を記入
 
-例：
+### 2) Claude Code を初期化する
 
-```md
-# Competition URL
-https://www.kaggle.com/competitions/<competition-slug>
+* リポジトリ直下で `/init` を実行し、指示書を読み込ませる
+  （以降は **指示書のルールが最優先**）
 
-# はじめに
-これはKaggleのコンペティション用のレポジトリです。
-/initをしたらここを読み込んでルールを確認してください。
-...
-```
+### 3) データを揃える
+* プロンプト:「データセットをダウンロードしてきて。`datasets/` に保存、展開まで。再現コマンドも残して。」
+* 注意：kaggle APIのセットアップは済ませておくこと。
 
-> これにより「このレポがどのコンペの作業場か」が常に明確になります。
+### 4) まず全体像を掴む（EDA）
+* プロンプト：「EDAして `competition/overview.md` にまとめて。データ構造、サイズ、指標、提出形式、注意点込み。」
 
-### 0-3. `/init` で初期化（Claude Code）
+### 5) 先行知見を集める（調査）
+* プロンプト：「関連論文を探して `survey/papers/maybe_related_research.md` にまとめて。転用アイデアも。」
+* プロンプト：「類似コンペを探して `competition/related_competitions.md` にまとめて。流用点/差分も。」
+ 
+### 6) 実験を開始する（最初のベースライン）
+* プロンプト：「`workspace/expA00_baseline` を作って最小ベースライン。`SESSION_NOTES.md` を必ず作成して記録。」
 
-Claude Code 上でリポジトリ直下から `/init` を実行し、
-**指示書（方針md）を読み込ませてルールを確定**させます。
 
-以降は **指示書のルールが最優先**です。
 
 ---
 
-## 1. リポジトリ構造（テンプレ標準）
+# 詳細説明
+
+## リポジトリ構造（テンプレ標準）
 
 ```
 ./
 ├── datasets/
 │   └── distributed/              # Competition data download scripts
-├── competition/                  # コンペティションの内容について
+├── competition/                  # コンペティションの内容について（EDA/類似コンペなど）
 ├── tools/                        # Utility scripts
 │   ├── kaggle_elapsed_time.py    # Submission status monitoring
 │   └── kaggle_upload.sh          # Dataset upload/versioning script
@@ -61,11 +61,19 @@ Claude Code 上でリポジトリ直下から `/init` を実行し、
     └── expXXX... / expA00...     # 実験フォルダ（命名規則は後述）
 ```
 
+推奨ドキュメント配置：
+
+* `competition/overview.md`：EDAまとめ（データ構造・指標・提出形式など）
+* `competition/related_competitions.md`：類似コンペまとめ
+* `survey/papers/xxxx.md`：論文メモ
+* `survey/discussion/xxxx.md`：ディスカッション観測メモ
+* `workspace/exp*/SESSION_NOTES.md`：実験ログ（必須）
+
 ---
 
-## 2. 実験のルール（テンプレの核）
+## 実験のルール（テンプレの核）
 
-### 2-1. 実験フォルダ命名規則
+### 実験フォルダ命名規則
 
 Claude と人間で実験フォルダを分けます。
 
@@ -77,89 +85,34 @@ Claude と人間で実験フォルダを分けます。
 
   * 例: `workspace/exp200_try_unet`
 
-### 2-2. SESSION_NOTES.md（必須）
+### SESSION_NOTES.md（必須）
 
 **各実験フォルダには必ず `SESSION_NOTES.md` を作成**します。
 途中で中断しても、未来の自分/他人が復帰できる状態を作ります。
 
-（テンプレの詳細は指示書の「セッション記録のルール」に従ってください）
+最低限書くこと（例）：
+
+* 仮説（何を良くしたいのか）
+* 変更点（どのファイル/どの設定を変えたか）
+* 実験条件（CV、seed、データ分割、特徴量、モデル設定）
+* 結果（メトリクス、提出結果、ログへのリンク）
+* 次アクション（TODO、やる/やらない）
+
+※詳細は指示書（`KAGGLE_DIRECTION.md`）の「セッション記録のルール」に従ってください。
 
 ---
 
-## 3. 典型ワークフロー（このテンプレの標準手順）
+## tools の使い方
 
-このテンプレは「毎回同じ手順で調査→実験に入れる」ことが価値です。
-以下を順番に実施します。
+### 提出の監視・経過時間の計測
 
-### 3-1. データのダウンロードを指示する
+`tools/kaggle_elapsed_time.py` は提出状況の監視や、経過時間を見たい時に使います。
+（具体的な使い方はスクリプト内のヘルプやコメントを参照）
 
-Claude への指示例：
+### Kaggle Dataset へのアップロード（フォルダをバージョン管理）
 
-* 「データセットをダウンロードしてきて。`datasets/` 配下に保存して、zipなら展開まで。」
-* 「再現性のために、実行コマンドと取得先（Kaggle API等）も残して。」
+`tools/kaggle_upload.sh` は、フォルダを Kaggle Dataset としてアップロードしてバージョンを作る用途です。
+（実験成果物や特徴量、推論結果などを再現性のために残す）
 
-期待成果物：
+> 使い方・前提（Kaggle API 設定など）はスクリプト内のコメントに従ってください。
 
-* `datasets/` にデータが揃う
-* 取得手順が `datasets/distributed/` かドキュメントに残る
-
-### 3-2. コンペデータのEDAをしてまとめる
-
-Claude への指示例：
-
-* 「コンペデータをEDAして、データ構造・サイズ感・欠損・ラベル分布・注意点を markdown にまとめて」
-* 「train/test/sample_submission、評価指標、提出形式、ローカル検証の観点も書いて」
-
-保存先（推奨）：
-
-* `survey/competition/overview.md`（※無ければ作成する）
-
-### 3-3. コンペ内容に近い論文を探してまとめる
-
-Claude への指示例：
-
-* 「このコンペに近い論文を探して `survey/papers/maybe_related_research.md` にまとめて」
-* 「手法・データ・評価・再現リンク・転用アイデア・注意点を入れて」
-
-### 3-4. コンペ内容に近いタスクのコンペを探してまとめる
-
-Claude への指示例：
-
-* 「近いタスクのKaggle/他コンペを探して `competition/related_competitions.md` にまとめて」
-* 「タスク概要、評価指標、定番手法、上位解法の共通パターン、参考ノート/解法のリンクも」
-
-### 3-5. 実験に入る（最初のベースライン）
-
-1つ目の実験フォルダを切って、最小ベースラインを作ります。
-
-```bash
-mkdir -p workspace/expA00_baseline
-touch workspace/expA00_baseline/SESSION_NOTES.md
-```
-
-Claude への指示例：
-
-* 「`workspace/expA00_baseline` を作り、最小ベースライン（学習→推論→submission生成）を実装して。`SESSION_NOTES.md` も必ず埋めて。」
-
----
-
-## 4. チェックリスト（迷ったらここ）
-
-* [ ] 指示書冒頭に対象コンペURLを書いた
-* [ ] `/init` で初期化してルールを読み込んだ
-* [ ] データを `datasets/` に配置し、手順が残っている
-* [ ] EDAが `competition/overview.md` にまとまっている
-* [ ] 論文まとめが `survey/papers/` にある
-* [ ] 類似コンペまとめが `survey/competition/related_competitions.md` にある
-* [ ] `workspace/expA00_*` を作り `SESSION_NOTES.md` を作った
-* [ ] 最小ベースラインが一気通貫で動く
-
----
-
-## 付録：Claudeに投げる指示（コピペ用）
-
-1. 「データセットをダウンロードしてきて。`datasets/` に保存、展開まで。再現コマンドも残して。」
-2. 「EDAして `competition/overview.md` にまとめて。データ構造、サイズ、指標、提出形式、注意点込み。」
-3. 「関連論文を探して `survey/papers/maybe_related_research.md` にまとめて。転用アイデアも。」
-4. 「類似コンペを探して `survey/competition/related_competitions.md` にまとめて。流用点/差分も。」
-5. 「`workspace/expA00_baseline` を作って最小ベースライン。`SESSION_NOTES.md` を必ず作成して記録。」
