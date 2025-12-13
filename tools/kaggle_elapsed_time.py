@@ -7,7 +7,7 @@ from pathlib import Path
 from kaggle.api.kaggle_api_extended import KaggleApi
 
 # === 設定 ===
-COMPETITION = ""
+COMPETITION = "ここにコンペの名前を入れる。実行しておくとサブの時間が記録される。"
 OUTPUT_DIR = Path("submission_complete_logs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
