@@ -1,0 +1,45 @@
+seed: 42
+
+data:
+  img_dir: ../datasets/train_imgs
+  mask_dir: ../datasets/train_masks
+  img_size: 256          # spatial patch size (H, W)
+  depth: 16              # depth patch size (D)
+  n_slices: 5            # 2.5D neighboring slices (odd number recommended)
+  stride_ratio: 0.5      # overlap ratio for tiling
+  num_classes: 1
+  fold: 0
+  num_folds: 5
+  num_workers: 4
+
+model:
+  arch: unet             # unet / unetplusplus / manet / deeplabv3plus
+  encoder: convnext_nano.in12k_ft_in1k
+  pretrained: true
+  ema: true
+  ema_decay: 0.999
+
+loss:
+  name: bce_dice         # bce_dice / mse / focal_dice
+  mixup: 0.0             # mixup probability (0 = disabled)
+
+optimizer:
+  name: adamw
+  lr: 1.0e-3
+  weight_decay: 1.0e-2
+
+scheduler:
+  name: cosine           # cosine / step / onecycle
+  warmup_epochs: 3
+  min_lr: 1.0e-6
+
+trainer:
+  max_epochs: 50
+  accelerator: gpu
+  devices: [0]
+  precision: 16-mixed
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  deterministic: warn
+  batch_size: 16
+  freeze_epochs: 0       # freeze encoder for N epochs
