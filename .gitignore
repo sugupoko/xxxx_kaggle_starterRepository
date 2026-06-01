@@ -163,6 +163,9 @@ celerybeat.pid
 
 # Environments
 .env
+# RunPod etc. secret files (e.g. .runpod.env); keep the *.env.example templates tracked
+*.env
+!*.env.example
 .venv
 env/
 venv/

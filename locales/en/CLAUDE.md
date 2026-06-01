@@ -12,6 +12,7 @@ This template is designed to run on **Claude Opus (1M context)**. To leverage th
 - **Code review**: Parallel-load `src/`, `config.yaml`, fold generation scripts, and `KAGGLE_DIRECTION.md` **simultaneously** before checking consistency (trace the leakage path end-to-end: training → inference → submission)
 - **Strategy**: See the "line," not the "points." The `competition-strategist` agent / `/strategy` skill is optimized for cross-experiment synthesis
 - **Background execution**: Run training jobs, scraping, long validations with `run_in_background` or via `/loop` / `/schedule`
+- **External GPU**: When local GPU is not enough, run training on RunPod (`tools/runpod/`) — connection / key handling / cost control verified on real hardware. Keys live in `.runpod.env` (gitignored); never expose raw values
 - **Plan mode**: Use Plan mode before major direction changes (moving to a new exp number, switching submission format, etc.)
 
 Parallel reading is OK for **your own competition files**. You don't need to load all of `reference/` or every byte of `datasets/*`.

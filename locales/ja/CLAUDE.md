@@ -12,6 +12,7 @@ Kaggle だけでなく、grand-challenge.org / CodaBench / 独自プラットフ
 - **コードレビュー**: `src/` 全体 + `config.yaml` + fold 生成スクリプト + `KAGGLE_DIRECTION.md` を**同時に並列ロード**してから整合性を判断する（学習→推論→提出のリーク経路を通しで追う）
 - **戦略判断**: 「点」ではなく「線」で見る。`competition-strategist` agent / `/strategy` skill が横断 synthesis に最適化されている
 - **背景実行**: 学習ジョブ・スクレイピング・長い検証は `run_in_background` または `/loop` / `/schedule` で回す
+- **外部GPU**: ローカルGPUで足りない学習は RunPod (`tools/runpod/`) で回す（接続・鍵運用・コスト管理を実機検証済み。鍵は `.runpod.env` ＝ gitignore で扱い、生値を出さない）
 - **Plan mode**: 大きな方針変更（新しい exp 番号への移行、提出形式の変更など）の前に Plan mode で構造化する
 
 並列 read が許容されるのは**コンペ関連の自分のファイル**まで。`reference/` の他人のコード・大量の `datasets/*` の中身を全部ロードする必要はない。

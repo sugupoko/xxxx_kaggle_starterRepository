@@ -1,6 +1,6 @@
 # Competition Experiment Template
 
-**v2.4.0**
+**v2.4.1**
 
 > Supports **Kaggle** and **non-Kaggle** competitions (grand-challenge.org, CodaBench, custom platforms).
 > Designed for **Claude Opus (1M context)**.
@@ -74,6 +74,7 @@ This updates: `CLAUDE.md`, `KAGGLE_DIRECTION.md`, agent definitions, skill defin
 | `kaggle_elapsed_time.py` | Submission status monitoring & elapsed time |
 | `kaggle_upload.sh` | Folder upload to Kaggle Dataset with versioning |
 | `kaggle_code_competition_submission.md` | End-to-end flow for Kaggle Code Competitions (Dataset + Notebook + manual submit). Templates for `kernel-metadata.json`, `dataset-metadata.json`, `upload.sh`, common pitfalls |
+| `runpod/` | External-GPU (RunPod) ops guide, verified on real hardware (runpodctl 2.3.0): connect / key handling via Secrets / cost guards / storage 3-tier (Kaggle = source of truth, Network Volume = scratch). Scripts: `runpod_ops.py`, `smoke_test.sh`, `startup.sh`, `.runpod.env.example`. Copy the folder into any repo to port it |
 
 #### Reference Code (`reference/`)
 - **2.5D segmentation template** based on PyTorch Lightning + timm + smp
@@ -112,7 +113,8 @@ This updates: `CLAUDE.md`, `KAGGLE_DIRECTION.md`, agent definitions, skill defin
 ├── reference/                        # Reference code (2.5D Seg)
 ├── tools/
 │   ├── kaggle_elapsed_time.py        # Submission monitoring
-│   └── kaggle_upload.sh              # Dataset upload
+│   ├── kaggle_upload.sh              # Dataset upload
+│   └── runpod/                       # External-GPU (RunPod) ops guide + scripts
 ├── submit/
 │   └── SUBMISSIONS.md                # Submission history
 ├── datasets/                         # Competition data
@@ -179,6 +181,7 @@ Claude Code を前提に、**データ取得 → EDA → 調査（論文/類似�
 | `kaggle_elapsed_time.py` | 提出状況の監視・経過時間計測 |
 | `kaggle_upload.sh` | フォルダを Kaggle Dataset にアップロード・バージョン管理 |
 | `kaggle_code_competition_submission.md` | Kaggle Code Competition 用の提出フロー全文（Dataset 作成 → Notebook push → 手動 submit）。`kernel-metadata.json` / `dataset-metadata.json` / `upload.sh` の雛形とハマりどころ集 |
+| `runpod/` | 外部GPU（RunPod）の運用ガイド（実機 runpodctl 2.3.0 で検証）。接続 / Secrets による鍵運用 / コスト自動停止 / ストレージ3層（Kaggle=真実・Volume=scratch）。スクリプト: `runpod_ops.py` / `smoke_test.sh` / `startup.sh` / `.runpod.env.example`。フォルダごとコピーで他リポジトリへ移植可 |
 
 #### リファレンスコード（`reference/`）
 - PyTorch Lightning + timm + smp ベースの **2.5Dセグメンテーションテンプレート**
@@ -217,7 +220,8 @@ Claude Code を前提に、**データ取得 → EDA → 調査（論文/類似�
 ├── reference/                        # リファレンスコード (2.5D Seg)
 ├── tools/
 │   ├── kaggle_elapsed_time.py        # 提出監視
-│   └── kaggle_upload.sh              # Dataset アップロード
+│   ├── kaggle_upload.sh              # Dataset アップロード
+│   └── runpod/                       # 外部GPU(RunPod)運用ガイド + スクリプト
 ├── submit/
 │   └── SUBMISSIONS.md                # 提出履歴
 ├── datasets/                         # コンペデータ
@@ -248,6 +252,7 @@ Claude Code を前提に、**データ取得 → EDA → 調査（論文/類似�
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v2.4.1 | 2026-06-01 | Add **external-GPU (RunPod) ops tooling** at `tools/runpod/` (verified on runpodctl 2.3.0): connect / Secrets-based key handling / cost auto-stop / storage 3-tier (Kaggle = source of truth, Network Volume = scratch), plus `runpod_ops.py` / `smoke_test.sh` / `startup.sh` / `.runpod.env.example`. `.gitignore` protects `*.env` while keeping `*.env.example`. CLAUDE.md notes external GPU under background execution |
 | v2.4.0 | 2026-05-31 | Add **knowledge wiki (stock layer)**: `knowledge/` with `INDEX.md` retrieval index + atomic pages (`technique/` `data/` `error/` `decision/`), new `/wiki` skill (add / find / promote / consolidate), SessionStart auto-injects `INDEX.md`. Separates flow (`daily_reports/`) from stock (distilled, reusable knowledge). Make the Opus version label version-agnostic ("Opus (1M context)"); agents keep the `model: opus` alias |
 | v2.3.2 | 2026-05-13 | Add **Kaggle Code Competition** support: full submission flow guide at `tools/kaggle_code_competition_submission.md`. CLAUDE.md distinguishes CSV vs Code Competition. `submission-validator` agent gains (A') Code Competition checks. `submit/` naming convention bumped: include source exp folder (e.g., `v001_expA02_super_clone`) |
 | v2.3.1 | 2026-05-03 | Add **hybrid phase guard (early / mid / late)** to prevent "premature ensemble". Time-based + milestone-based detection in `competition-strategist`. Compact phase table in CLAUDE.md (always loaded), detailed do/don't lists in KAGGLE_DIRECTION.md |
