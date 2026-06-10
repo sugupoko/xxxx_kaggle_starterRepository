@@ -57,7 +57,7 @@ Volumeが消えても・DCが変わっても、Kaggleから再構築できる状
 
 ### ★運用で刺さる落とし穴（と対策）
 1. **ローカル→Kaggleの上り帯域**が最大のボトルネック → 巨大データは pod上で前処理。ローカル前処理は数GB級まで
-2. **GPU在庫の偏在でVolumeのDCにGPУが無い事故** → Volumeは使い捨て前提（真実はKaggle）。DCにこだわらない
+2. **GPU在庫の偏在でVolumeのDCにGPUが無い事故** → Volumeは使い捨て前提（真実はKaggle）。DCにこだわらない
 3. **ckptがVolumeだけだと別DCで再開不可** → 重要ckptは定期的に Kaggle/HF にも push（DC非依存の保険）
 4. **残高ゼロでVolume消失＝復元不可** → 自動チャージON ＋ 上記3で被害ゼロ
 5. **「良かったらup」を後回しにすると消える＋提出に必須** → 学習完了→即 `kaggle datasets version` で push→それからpod削除、を1手順に固定
@@ -158,12 +158,14 @@ source .runpod.env
 runpodctl me                                  # 残高（課金前確認）
 runpodctl datacenter list                     # Volume置くDC決定
 runpodctl gpu list                            # 目的GPUの空き・ID確認
+# ★--template-id 必須（bare --image だと即EXITED）／--stop-after は切り忘れ保険
+#   ※継続行 `\` の後ろにコメントを書くと行継続が壊れて --stop-after 等が落ちるので書かない
 runpodctl pod create --name train \
   --gpu-id "NVIDIA A100 80GB PCIe" --cloud-type SECURE \
   --network-volume-id <VOL_ID> --volume-mount-path /workspace \
-  --template-id runpod-torch-v280 \            # ★bare --image だと即EXITED→必ずテンプレ
+  --template-id runpod-torch-v280 \
   --container-disk-in-gb 40 \
-  --stop-after $(date -u -d '+8 hours' +%Y-%m-%dT%H:%M:%SZ)   # ★切り忘れ保険
+  --stop-after $(date -u -d '+8 hours' +%Y-%m-%dT%H:%M:%SZ)
 runpodctl pod list                            # ID・状態（RUNNINGになるまで数十秒）
 runpodctl ssh info <POD_ID>                   # ssh接続情報
 # ... 作業 ...
@@ -201,8 +203,8 @@ pod に鍵を渡す方法は2通り。**機密度の高い鍵は RunPod Secrets 
 2. pod env で参照: `GH_TOKEN={{ RUNPOD_SECRET_GH_TOKEN }}`（`--env` JSON か Web UI の Environment Variables）
 3. ローカル `.runpod.env` からは生トークンを消し、**`RUNPOD_API_KEY` だけ残す**
 
-- `runpod_ops.py` の `CFG.use_runpod_secrets=True`（既定）がこの参照を自動生成
-- ✅ **実機確認（2026-06-01）: CLI/SDK の `--env` では `{{ RUNPOD_SECRET_x }}` は解決されない**。→ Web UI から起動（UIは確実に解決）するか、`use_runpod_secrets=False` で生値を渡すか、**鍵は scp で起動後に注入**する（§9.5 の確定手順）
+- `runpod_ops.py` の `CFG.use_runpod_secrets` は**既定 False（生値を渡す）**。True にするとこの参照を自動生成するが、下記の通り SDK では解決されないため Web UI 起動以外では使えない（True のまま `up` すると警告が出る）
+- ✅ **実機確認（2026-06-01）: CLI/SDK の `--env` では `{{ RUNPOD_SECRET_x }}` は解決されない**。→ Web UI から起動（UIは確実に解決）するか、`use_runpod_secrets=False`（既定）で生値を渡すか、**鍵は scp で起動後に注入**する（§9.5 の確定手順）
 - pod内では結局 env として読めるので、**最後の砦は最小スコープ＋短期失効トークン**（例: GitHub PAT は Fine-grained / 対象repoのみ / Contents:Read-only / 期限付き）
 
 ---
@@ -215,10 +217,12 @@ pod に鍵を渡す方法は2通り。**機密度の高い鍵は RunPod Secrets 
 2. RunPod Secret に `GH_TOKEN`（値=`github_pat_...`）、`GIT_REPO`（値=`github.com/<user>/<repo>.git`）を登録
 3. pod env で参照注入 → `startup.sh` が自動 clone:
    ```bash
-   git clone "https://x:${GH_TOKEN}@${GIT_REPO}" "$CODE_DIR"
-   git -C "$CODE_DIR" remote set-url origin "https://${GIT_REPO}"   # .git/config からトークン除去
+   # ★トークンは URL に埋め込まない（ps/エラー出力に露出＋除去後の再起動 pull が壊れる）
+   #   credential helper なら argv にトークンが出ず、再起動時の pull もそのまま通る
+   git config --global credential.helper '!f() { echo "username=x-access-token"; echo "password=${GH_TOKEN}"; }; f'
+   git clone "https://${GIT_REPO}" "$CODE_DIR"
    ```
-- ローカルで事前検証（課金なし）: `git ls-remote "https://x:${GH_TOKEN}@${GIT_REPO}" HEAD`
+- ローカルで事前検証（課金なし）: `git ls-remote "https://x:${GH_TOKEN}@${GIT_REPO}" HEAD`（使い捨てコマンドなので URL 埋め込みでも可）
 
 ---
 

@@ -25,12 +25,11 @@ class CFG:
     volume_mount_path= "/workspace"
     container_disk_gb= 40
     ports            = "8888/http,22/tcp"         # Jupyter + SSH
-    cost_ceiling     = None
-    # ★pod に注入する env。鍵は「生値」でなく RunPod Secret 参照 {{ RUNPOD_SECRET_x }} を渡す
-    #   = pod設定/ダッシュボード/API/履歴に生値が残らない（生値はRunPod側に暗号化保管）。
-    #   ⚠️ API/SDK経由で {{ }} が解決されるかは初回pod起動で要検証。
-    #      解決されない場合は use_runpod_secrets=False にして os.environ の生値を渡す（Web UI起動なら確実に解決）。
-    use_runpod_secrets = True
+    # ★pod に注入する env。
+    #   ✅ 実機確認済（2026-06-01）: SDK/CLI の --env では {{ RUNPOD_SECRET_x }} は解決されない
+    #      （未解決のリテラルがそのまま pod に届く）→ 既定 False で os.environ の生値を渡す。
+    #      Secret 参照を使いたい場合は Web UI から起動する（UIは確実に解決。README §5）。
+    use_runpod_secrets = False
     _secret_keys     = ["GH_TOKEN", "GIT_REPO", "KAGGLE_USERNAME", "KAGGLE_KEY", "HF_TOKEN"]  # RunPod Secretの名前
     if use_runpod_secrets:
         pod_env = {k: "{{ RUNPOD_SECRET_%s }}" % k for k in _secret_keys}
@@ -50,6 +49,9 @@ def _client():
 
 def up():
     rp = _client()
+    if CFG.use_runpod_secrets:
+        print("[warn] use_runpod_secrets=True: SDK/CLI では {{ RUNPOD_SECRET_x }} は解決されない"
+              "（実機確認済 2026-06-01）。pod には未解決のリテラルが届く。Web UI 起動か False を推奨（README §5）")
     if not CFG.network_volume_id:
         print("[warn] network_volume_id 未設定。Volumeなしで起動（データは pod 停止で消える）。")
     env = {k: v for k, v in CFG.pod_env.items() if v}   # 空の鍵は渡さない
@@ -64,8 +66,16 @@ def up():
         kw["network_volume_id"] = CFG.network_volume_id
     print(f"[create] {CFG.cloud_type} {CFG.gpu_type_id} vol={CFG.network_volume_id or 'NONE'} (★課金開始)")
     pod = rp.create_pod(**kw)
-    print(json.dumps(pod, indent=2, ensure_ascii=False))
-    print(f"\n→ 起動後: python {sys.argv[0]} list / runpodctl ssh info <id>")
+    # ★鍵漏れ防止: レスポンスを丸ごと print しない（env に GH_TOKEN/KAGGLE_KEY/HF_TOKEN の生値が入る）
+    pod = pod if isinstance(pod, dict) else {}
+    pod_id = pod.get("id", "?")
+    safe = {k: pod.get(k) for k in ("id", "name", "desiredStatus", "costPerHr", "machineId")}
+    safe["gpu"] = (pod.get("machine") or {}).get("gpuDisplayName", CFG.gpu_type_id)
+    print(json.dumps(safe, indent=2, ensure_ascii=False))
+    # ★SDK 経路には --stop-after 相当が無い（CLI と違い課金漏れの最終防衛が効かない）
+    print("\n⚠️ SDK経路に自動停止なし。切り忘れ防止のため即実行推奨:")
+    print(f"   runpodctl pod update {pod_id} --stop-after $(date -u -d '+8 hours' +%Y-%m-%dT%H:%M:%SZ)")
+    print(f"\n→ 起動後: python {sys.argv[0]} list / runpodctl ssh info {pod_id}")
 
 
 def lst():
@@ -90,6 +100,8 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "list"
     if cmd == "up":     up()
     elif cmd == "list": lst()
-    elif cmd == "stop": stop(sys.argv[2])
-    elif cmd == "down": down(sys.argv[2])
+    elif cmd in ("stop", "down"):
+        if len(sys.argv) < 3:   # ★pod ID 必須（生 IndexError で落とさない）
+            sys.exit(f"usage: python {sys.argv[0]} {cmd} <POD_ID>  （ID は `list` で確認）")
+        stop(sys.argv[2]) if cmd == "stop" else down(sys.argv[2])
     else: sys.exit(f"unknown cmd: {cmd}  (up|list|stop <id>|down <id>)")
