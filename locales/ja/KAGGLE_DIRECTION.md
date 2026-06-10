@@ -4,32 +4,37 @@ CLAUDE.md と合わせてルールを確認してください。
 
 対象コンペはこれです。
 コンペ名：
+URL：
+締切 / タイムライン：
+評価指標：
 
 
 # ディレクトリ構造
+
+作業でよく触る場所だけ抜粋（最新の完全な構造は Readme.md の「リポジトリ構造」を参照）。
 
 ```
 ./                                # Primary working directory
 ├── myMemo.md                     # 自分のメモを残す。
 ├── claudeSummary.md              # 各実験のメモ、知見を集約する
-├── datasets/
-│   └── distributed/              # Competition data download scripts
-├── competition/                  # コンペティションの内容について
+├── datasets/                     # コンペデータの置き場（git 管理外）
 ├── tools/                        # Utility scripts
 │   ├── kaggle_elapsed_time.py    # Submission status monitoring
 │   └── kaggle_upload.sh          # Dataset upload/versioning script
-├── survey                        # 調査した内容を格納するフォルダ
-│   ├── discussion                # kaggleのディスカッションを定点観測する 
-│   └── papers                    # 論文の内容をまとめておく
-│── workspace/                    # Main development workspace
-    └── expXXX                    # Dataset upload/versioning script
+├── survey/                       # 調査した内容を格納するフォルダ
+│   ├── competition/              # コンペ概要（/onboard の出力 overview.md）
+│   ├── discussion/               # kaggleのディスカッションを定点観測する
+│   └── papers/                   # 論文の内容をまとめておく
+└── workspace/                    # Main development workspace
+    ├── fold/                     # fold割り当ての永続化（generate_folds.py + {version}/folds.csv）
+    └── expXXX/                   # 実験フォルダ
 ```
 
 # 実験方法
 Claudeの実験フォルダと、人間の実験フォルダを分けています。
 * claude用
   * exp(アルファベット)（数字２桁）_（実験名）でフォルダを作成しその中で実験をする
-    worspace/expA00_baseline
+    workspace/expA00_baseline
   * ナンバリングは大きく実験を変える際に変更すること。多少の微調整やパラメータ探索は同じフォルダ内で実行すること。
 * 人間用
   * exp(数字3桁)_実験名
@@ -92,13 +97,15 @@ workspace/exp200_xxxxxxxx/SESSION_NOTES.md
 # 学習のコードについて
 1. 学習のログも残すようにしてほしい。学習曲線などです。こういう感じできれいにして。
 ```
-./exp000_all_test                 
-├── SESSION_NOTES.md                     
-├── results/
-│   └── exp001_xxxx/              
-├── dataset/               
-│   └── v001_xxxx/               
-├── src 
+./exp000_all_test
+├── SESSION_NOTES.md
+├── run.sh                        # cd "$(dirname "$0")" してから train.py を呼ぶ
+├── train.py                      # 実験フォルダ直下に置く
+├── config.yaml
+├── src/                          # datamodule / model などのモジュール
+└── results/
+    └── {experiment_name}/
+        └── foldN/                # ckpt・学習曲線・ログ・config コピーを集約
 ```
 2. 学習は途中から再開できるようにしておいてほしい。PCが途中で止まることがあります。
 3. AMPで学習するようにしておいてほしい。
@@ -197,42 +204,10 @@ python scrape_discussion_details.py
    - headlessモードで実行
    - 過度なアクセスを避ける
 
-### MCPツールの活用（推奨）
+### WebFetch / WebSearch の活用
 
-**MCP (Model Context Protocol)** ツールが利用可能な環境では、以下の方法でより簡単に実行できます：
-
-#### MCP利用可能性の確認
-```bash
-# MCPツールの確認
-env | grep -i mcp
-which mcp
-```
-
-#### MCPでのWeb取得
-MCPツールには`mcp__web_fetch`や`mcp__web_search`などのツールが含まれている場合があり、WebFetchより制限が少ない可能性があります。
-
-**利用可能なMCPツール例**:
-- `mcp__web_fetch` - WebページのHTMLを取得
-- `mcp__web_search` - Web検索
-- `mcp__browser` - ブラウザ操作
-
-**使用方法**:
-```
-Claude Codeに以下のように指示：
-「MCPツールを使ってKaggleのディスカッションページを取得して」
-```
-
-#### MCP vs Playwright比較
-
-| 方法 | メリット | デメリット |
-|------|----------|------------|
-| **MCP** | - セットアップ不要<br>- Claude Codeとの統合<br>- より簡潔 | - 環境依存<br>- ツールが限定的な場合あり |
-| **Playwright** | - 確実に動作<br>- 詳細な制御可能<br>- 汎用性が高い | - セットアップ必要<br>- 環境構築が必要 |
-
-**推奨アプローチ**:
-1. まずMCPツールの有無を確認
-2. MCPが利用できない場合はPlaywrightを使用
-3. 両方試して、より効果的な方を選択
+Claude Code には **WebFetch / WebSearch が標準搭載**されている。静的に取得できるページ（公式の Overview / Rules / Data ページなど）はまずこれらで取得する。
+JavaScript レンダリングが必要なページ（Kaggle のディスカッション一覧など）だけ、上記の Playwright スクレイピングにフォールバックする。
 
 ## papersフォルダ
 論文の内容をまとめておく
@@ -244,7 +219,7 @@ Claude Codeに以下のように指示：
    - arXiv、Google Scholar等から論文を取得
 
 2. **論文サマリー作成**
-   - `mabe_related_research.md` に要約をまとめる
+   - `survey/papers/` 配下にトピックごとの .md ファイルで要約をまとめる
    - 手法、データセット、評価指標、結果を記録
 
 3. **カテゴリ別整理**
@@ -253,8 +228,8 @@ Claude Codeに以下のように指示：
    - ベンチマーク論文
    - ツール・ライブラリ
 
-## competitionフォルダ
-コンペティションの基本情報をまとめる
+## competitionフォルダ（`survey/competition/`）
+コンペティションの基本情報を `survey/competition/` にまとめる（`/onboard` の出力先）
 
 ### 収集する情報
 
@@ -266,8 +241,8 @@ Claude Codeに以下のように指示：
    - 推奨アプローチ
 
 2. **データソース**
-   - train.csv, test.csv の分析
-   - Parquetファイルの構造理解
+   - 配布データ（train/test）の分析
+   - ファイルフォーマット（CSV / Parquet / 画像 など）の構造理解
    - メタデータの確認
 
 ---

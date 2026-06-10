@@ -4,25 +4,30 @@ Please review the rules together with CLAUDE.md.
 
 Target competition:
 Competition name:
+URL:
+Deadline / timeline:
+Evaluation metric:
 
 
 # Directory Structure
+
+Only the places you touch most often are shown here (see "Repository Structure" in Readme.md for the latest complete structure).
 
 ```
 ./                                # Primary working directory
 ├── myMemo.md                     # Personal notes
 ├── claudeSummary.md              # Aggregated notes and insights from each experiment
-├── datasets/
-│   └── distributed/              # Competition data download scripts
-├── competition/                  # Competition details
+├── datasets/                     # Competition data (not tracked by git)
 ├── tools/                        # Utility scripts
 │   ├── kaggle_elapsed_time.py    # Submission status monitoring
 │   └── kaggle_upload.sh          # Dataset upload/versioning script
-├── survey                        # Research and investigation folder
-│   ├── discussion                # Regular monitoring of Kaggle discussions
-│   └── papers                    # Paper summaries
-│── workspace/                    # Main development workspace
-    └── expXXX                    # Experiment folders
+├── survey/                       # Research and investigation folder
+│   ├── competition/              # Competition overview (overview.md produced by /onboard)
+│   ├── discussion/               # Regular monitoring of Kaggle discussions
+│   └── papers/                   # Paper summaries
+└── workspace/                    # Main development workspace
+    ├── fold/                     # Persisted fold assignments (generate_folds.py + {version}/folds.csv)
+    └── expXXX/                   # Experiment folders
 ```
 
 # Experiment Method
@@ -94,11 +99,13 @@ workspace/exp200_xxxxxxxx/SESSION_NOTES.md
 ```
 ./exp000_all_test
 ├── SESSION_NOTES.md
-├── results/
-│   └── exp001_xxxx/
-├── dataset/
-│   └── v001_xxxx/
-├── src
+├── run.sh                        # cd "$(dirname "$0")" first, then call train.py
+├── train.py                      # placed directly in the experiment folder
+├── config.yaml
+├── src/                          # modules such as datamodule / model
+└── results/
+    └── {experiment_name}/
+        └── foldN/                # ckpt, learning curves, logs, config copy all here
 ```
 2. Training must be resumable from checkpoints. The PC may stop mid-training.
 3. Use AMP for training.
@@ -197,42 +204,10 @@ python scrape_discussion_details.py
    - Run in headless mode
    - Avoid excessive access
 
-### MCP Tool Usage (Recommended)
+### Using WebFetch / WebSearch
 
-**MCP (Model Context Protocol)** tools can simplify execution when available:
-
-#### Check MCP Availability
-```bash
-# Check MCP tools
-env | grep -i mcp
-which mcp
-```
-
-#### Web Fetching with MCP
-MCP tools may include `mcp__web_fetch` and `mcp__web_search`, potentially with fewer limitations than WebFetch.
-
-**Available MCP Tool Examples**:
-- `mcp__web_fetch` - Fetch webpage HTML
-- `mcp__web_search` - Web search
-- `mcp__browser` - Browser operations
-
-**Usage**:
-```
-Tell Claude Code:
-"Use MCP tools to fetch the Kaggle discussion page"
-```
-
-#### MCP vs Playwright Comparison
-
-| Method | Pros | Cons |
-|--------|------|------|
-| **MCP** | - No setup needed<br>- Integration with Claude Code<br>- More concise | - Environment dependent<br>- Tools may be limited |
-| **Playwright** | - Reliable<br>- Fine-grained control<br>- Versatile | - Setup required<br>- Environment setup needed |
-
-**Recommended Approach**:
-1. First check MCP tool availability
-2. Fall back to Playwright if MCP unavailable
-3. Try both and choose the more effective one
+Claude Code ships with **WebFetch / WebSearch built in**. For pages that can be fetched statically (official Overview / Rules / Data pages, etc.), use these first.
+Fall back to the Playwright scraping above only for pages that require JavaScript rendering (e.g., the Kaggle discussion list).
 
 ## Papers Folder
 Summarize paper contents.
@@ -244,7 +219,7 @@ Summarize paper contents.
    - Retrieve papers from arXiv, Google Scholar, etc.
 
 2. **Create Paper Summaries**
-   - Summarize in `mabe_related_research.md`
+   - Summarize in per-topic .md files under `survey/papers/`
    - Record methods, datasets, metrics, results
 
 3. **Organize by Category**
@@ -253,8 +228,8 @@ Summarize paper contents.
    - Benchmark papers
    - Tools/Libraries
 
-## Competition Folder
-Summarize basic competition information.
+## Competition Folder (`survey/competition/`)
+Summarize basic competition information in `survey/competition/` (the output location of `/onboard`).
 
 ### Information to Collect
 
@@ -266,8 +241,8 @@ Summarize basic competition information.
    - Recommended approaches
 
 2. **Data Sources**
-   - Analysis of train.csv, test.csv
-   - Understanding Parquet file structure
+   - Analysis of distributed data (train/test)
+   - Understanding file format structure (CSV / Parquet / images, etc.)
    - Metadata review
 
 ---

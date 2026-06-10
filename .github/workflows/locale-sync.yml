@@ -1,0 +1,102 @@
+# locales/ja とルートの同期を強制する CI
+# - ルールの原本はルート（日本語）。locales/ja は byte 一致のコピー、locales/en は翻訳
+# - ルートだけ直して locales/ja のコピーを忘れる事故をここで止める
+# - ついでに全 *.sh / *.py の構文チェックも回す（軽量・依存なし）
+# - 同期検査はテンプレート本体の保守用。fork では自動スキップされ、構文チェックのみ走る
+#   （コンペ用 fork はこのファイルごと削除してもよい。Readme.md「Language Setup」参照）
+name: locale-sync
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # (a) ルートの同期対象ファイルと locales/ja の byte 一致を検査
+      #     ズレたファイルは ::error で1つずつ報告する（最初の1個で止めない）
+      #     fork で setup.sh en を実行するとルートが英語になり恒常的に赤くなるため、
+      #     テンプレート本体のリポジトリでのみ実行する
+      - name: Check root <-> locales/ja byte-level sync
+        if: ${{ github.repository == 'sugupoko/xxxx_kaggle_starterRepository' }}
+        run: |
+          set -u
+          shopt -s nullglob
+
+          # 同期対象（この一覧が原本。変更時は Readme.md「Language Setup」の Localization scope も更新する）
+          # NOTE: knowledge/INDEX.md と submit/SUBMISSIONS.md はユーザーが編集する seed
+          #       （setup.sh も pristine 時しか上書きしない）ため byte 一致検査の対象外
+          targets=(
+            CLAUDE.md
+            KAGGLE_DIRECTION.md
+            knowledge/README.md
+            knowledge/_template.md
+          )
+          for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do
+            targets+=("$f")
+          done
+
+          fail=0
+          for f in "${targets[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error file=$f::同期対象がルートに存在しません: $f"
+              fail=1
+              continue
+            fi
+            if [ ! -f "locales/ja/$f" ]; then
+              echo "::error file=locales/ja/$f::locales/ja 側のコピーがありません: locales/ja/$f"
+              fail=1
+              continue
+            fi
+            if ! cmp -s "$f" "locales/ja/$f"; then
+              echo "::error file=locales/ja/$f::ルートとズレています: $f != locales/ja/$f"
+              diff -u "$f" "locales/ja/$f" | head -40 || true
+              fail=1
+            fi
+          done
+
+          # locales/ja 側にだけ存在する孤児ファイルの検出（ルートで削除済みの残骸）
+          for f in locales/ja/.claude/agents/*.md locales/ja/.claude/skills/*/SKILL.md; do
+            root_f="${f#locales/ja/}"
+            if [ ! -f "$root_f" ]; then
+              echo "::error file=$f::ルートに対応ファイルが無い孤児です: $f"
+              fail=1
+            fi
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            echo "locales/ja がルートとズレています。ルートを修正したら同じファイルを locales/ja にコピーしてください（cp <file> locales/ja/<file>）。"
+            exit 1
+          fi
+          echo "OK: 同期対象はすべて root と locales/ja で byte 一致"
+
+      # (b) 全シェルスクリプトの構文チェック
+      - name: Syntax-check all *.sh (bash -n)
+        if: ${{ always() }}
+        run: |
+          set -u
+          fail=0
+          while IFS= read -r -d '' f; do
+            if ! bash -n "$f"; then
+              echo "::error file=$f::bash 構文エラー: $f"
+              fail=1
+            fi
+          done < <(find . -name '*.sh' -not -path './.git/*' -print0)
+          exit "$fail"
+
+      # (c) 全 Python ファイルの構文チェック
+      - name: Syntax-check all *.py (py_compile)
+        if: ${{ always() }}
+        run: |
+          set -u
+          fail=0
+          while IFS= read -r -d '' f; do
+            if ! python3 -m py_compile "$f"; then
+              echo "::error file=$f::Python 構文エラー: $f"
+              fail=1
+            fi
+          done < <(find . -name '*.py' -not -path './.git/*' -print0)
+          exit "$fail"
