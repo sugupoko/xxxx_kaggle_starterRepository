@@ -13,14 +13,12 @@ Resume training:
 import os
 import sys
 import time
-import shutil
 import logging
 from pathlib import Path
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     LearningRateMonitor,
-    EarlyStopping,
     RichProgressBar,
 )
 from pytorch_lightning.loggers import CSVLogger
@@ -74,16 +72,20 @@ def setup_logging(log_dir: str, prefix: str = "train") -> None:
     log.info(f"Log file: {log_file}")
 
 
-def resolve_exp_dir(results_root: str, exp_name: str) -> Path:
-    """Resolve experiment directory with auto-numbering to avoid overwrite."""
-    base = Path(results_root) / exp_name
-    if not base.exists():
+def resolve_fold_dir(results_root: Path, exp_name: str, fold: int, resume: bool) -> Path:
+    """Resolve fold directory with auto-numbering to avoid overwrite.
+
+    Existence is checked per-fold (not per-experiment) so that running
+    fold1 after fold0 lands in the same experiment directory.
+    When resuming from a checkpoint, keep writing to the existing directory.
+    """
+    base = results_root / exp_name / f"fold{fold}"
+    if resume or not base.exists():
         return base
     n = 1
     while True:
-        candidate = Path(results_root) / f"{exp_name}_{n:03d}"
+        candidate = results_root / f"{exp_name}_{n:03d}" / f"fold{fold}"
         if not candidate.exists():
-            log.info(f"Experiment dir '{exp_name}' exists, using '{candidate.name}'")
             return candidate
         n += 1
 
@@ -92,21 +94,27 @@ def train(cfg):
     pl.seed_everything(cfg.seed, workers=True)
 
     # Resolve experiment directory: results/{exp_name}/foldN/
+    # Relative output_dir is resolved against this file's directory (cwd-independent)
     exp_name = cfg.get("experiment", {}).get("name", "default")
-    results_root = cfg.get("paths", {}).get("output_dir", "results")
-    exp_dir = resolve_exp_dir(results_root, exp_name)
-    fold_dir = exp_dir / f"fold{cfg.data.fold}"
+    results_root = Path(cfg.get("paths", {}).get("output_dir", "results"))
+    if not results_root.is_absolute():
+        results_root = Path(__file__).resolve().parent / results_root
+
+    ckpt_path = cfg.trainer.get("ckpt_path", None)
+    fold_dir = resolve_fold_dir(
+        results_root, exp_name, cfg.data.fold, resume=ckpt_path is not None
+    )
     fold_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy config to results for reproducibility
-    config_path = Path(os.path.dirname(__file__)) / "config.yaml"
-    if config_path.exists():
-        shutil.copy2(str(config_path), fold_dir / "config.yaml")
-
-    # Setup logging in fold directory
+    # Setup logging in fold directory (before any log output)
     setup_logging(str(fold_dir))
-    log.info(f"Experiment: {exp_dir.name}, Fold: {cfg.data.fold}")
+    if fold_dir.parent.name != exp_name:
+        log.info(f"Fold dir for '{exp_name}' exists, using '{fold_dir.parent.name}'")
+    log.info(f"Experiment: {fold_dir.parent.name}, Fold: {cfg.data.fold}")
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
+
+    # Save merged config (CLI overrides included) for reproducibility
+    OmegaConf.save(cfg, fold_dir / "config.yaml")
 
     datamodule = SegDataModule(cfg)
     model = SegModule(cfg)
@@ -132,8 +140,6 @@ def train(cfg):
         save_dir=str(fold_dir),
         name="csv_logs",
     )
-
-    ckpt_path = cfg.trainer.get("ckpt_path", None)
 
     trainer = pl.Trainer(
         max_epochs=cfg.trainer.max_epochs,

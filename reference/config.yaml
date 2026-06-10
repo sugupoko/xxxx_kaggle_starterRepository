@@ -1,54 +1,55 @@
-# Reference config: Akkadian → English translation (ByT5-base + Adafactor)
-# Based on expB05 Adafactor (GeoMean 28.10, +3.23 vs AdamW baseline)
-
-model:
-  name: "google/byt5-base"
-  max_source_length: 512
-  max_target_length: 512
-  num_beams: 8
-  length_penalty: 1.3
-  max_new_tokens: 512
-
-preprocessing:
-  logo_replacement: false
-
-training:
-  epochs: 15
-  batch_size: 4
-  gradient_accumulation_steps: 4
-  learning_rate: 1.0e-4
-  weight_decay: 0.01
-  warmup_ratio: 0.1
-  max_grad_norm: 1.0
-  label_smoothing: 0.1
-  optimizer: adafactor
-  bidirectional: false
-  rdrop_alpha: 0
-  fp16: false
-  eval_steps_per_epoch: 1
-  eval_start_epoch: 12
-  patience: 5
-  num_workers: 8
+# Reference config: 2.5D segmentation (PyTorch Lightning + timm + smp)
 
 seed: 42
 
-cv:
-  n_folds: 5
-  stratify: true
-  folds_csv: "workspace/fold/v1_stratified_len/folds.csv"
-
-data_augmentation:
-  augmented_csv: "data/augmented_train.csv"
-
 experiment:
-  name: "byt5_adafactor_v1"
+  name: exp_baseline     # output goes to results/{name}/foldN/ (rename when params change)
 
 paths:
-  train_csv: "datasets/train.csv"
-  test_csv: "datasets/test.csv"
-  sample_submission_csv: "datasets/sample_submission.csv"
-  output_dir: "results"
+  output_dir: results    # relative paths are resolved against train.py's directory
 
-logging:
-  log_every_n_steps: 10
-  save_total_limit: 2
+data:
+  img_dir: ../datasets/train_imgs
+  mask_dir: ../datasets/train_masks
+  img_size: 256          # spatial patch size (H, W)
+  depth: 16              # reserved: depth patch size (D) for a future tiling/inference script (not read by train.py)
+  n_slices: 5            # 2.5D neighboring slices (odd number recommended)
+  stride_ratio: 0.5      # reserved: overlap ratio for tiling inference (not read by train.py)
+  num_classes: 1
+  fold: 0
+  num_folds: 5
+  folds_csv: null        # pre-computed fold CSV (e.g. ../workspace/fold/v1/folds.csv, null = on-the-fly KFold)
+  num_workers: 4
+
+model:
+  arch: unet             # unet / unetplusplus / manet / deeplabv3plus
+  encoder: convnext_nano.in12k_ft_in1k
+  pretrained: true
+  ema: true
+  ema_decay: 0.999
+
+loss:
+  name: bce_dice         # bce_dice / mse / focal_dice
+  mixup: 0.0             # mixup probability (0 = disabled)
+
+optimizer:
+  name: adamw
+  lr: 1.0e-3
+  weight_decay: 1.0e-2
+
+scheduler:
+  name: cosine           # cosine / step / onecycle
+  warmup_epochs: 3
+  min_lr: 1.0e-6
+
+trainer:
+  max_epochs: 50
+  accelerator: gpu
+  devices: [0]
+  precision: 16-mixed
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  deterministic: warn
+  batch_size: 16
+  freeze_epochs: 0       # freeze encoder for N epochs
+  ckpt_path: null        # resume checkpoint (e.g. results/exp_baseline/fold0/last.ckpt)

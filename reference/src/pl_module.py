@@ -105,3 +105,8 @@ class SegModule(pl.LightningModule):
                 "interval": "epoch",
             },
         }
+
+    def lr_scheduler_step(self, scheduler, metric):
+        # timm schedulers are not torch LRScheduler subclasses; without this
+        # override Lightning raises MisconfigurationException at fit start.
+        scheduler.step(epoch=self.current_epoch + 1)

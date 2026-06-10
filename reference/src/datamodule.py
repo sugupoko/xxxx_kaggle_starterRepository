@@ -34,10 +34,20 @@ class SegDataModule(pl.LightningDataModule):
         mask_dir = Path(self.cfg.data.mask_dir)
 
         img_paths = sorted(img_dir.glob("*.npy"))
-        mask_paths = sorted(mask_dir.glob("*.npy"))
+        mask_map = {p.stem: p for p in mask_dir.glob("*.npy")}
+
+        # Match image/mask pairs by stem (independent sorted globs are fragile)
+        assert len(img_paths) > 0, f"no .npy files found in {img_dir}"
+        missing = [p.stem for p in img_paths if p.stem not in mask_map]
+        assert not missing, (
+            f"masks missing for {len(missing)} volumes (e.g. {missing[:5]}) in {mask_dir}"
+        )
+        assert len(img_paths) == len(mask_map), (
+            f"image/mask count mismatch: {len(img_paths)} images vs {len(mask_map)} masks"
+        )
 
         images = [np.load(p) for p in img_paths]
-        masks = [np.load(p) for p in mask_paths]
+        masks = [np.load(mask_map[p.stem]) for p in img_paths]
 
         return images, masks, img_paths
 

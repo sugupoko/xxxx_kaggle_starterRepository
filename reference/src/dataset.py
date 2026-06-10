@@ -72,7 +72,7 @@ class Seg25DDataset(Dataset):
         return len(self.indices)
 
     def _get_slice_stack(self, volume, center_d):
-        """Extract n_slices around center_d with reflection padding."""
+        """Extract n_slices around center_d, clamping at volume edges (replicate padding)."""
         depth = volume.shape[0]
         slices = []
         for offset in range(-self.half, self.half + 1):
