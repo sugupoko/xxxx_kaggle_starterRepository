@@ -17,24 +17,28 @@ if [ "${ALLOW_SECRETS:-}" = "1" ]; then
   exit 0
 fi
 
-# 追加/変更されてステージされたファイルだけ対象（削除は無視）
+# 追加/変更/リネームされてステージされたファイルだけ対象（削除は無視）
+#   R を含めるのは「git mv で秘密ファイルが素通りする穴」を塞ぐため
 # -z: 空白・非ASCII を含むファイル名でも壊れないよう NUL 区切りで受け取る
 #   （process substitution で読むので配列はループ後も残る。mapfile -d は
 #    bash4.4+ 専用なので、より移植性の高い read -d '' を使う）
 staged=()
 while IFS= read -r -d '' f; do
   staged+=("$f")
-done < <(git diff --cached --name-only -z --diff-filter=ACM)
+done < <(git diff --cached --name-only -z --diff-filter=ACMR)
 [ ${#staged[@]} -eq 0 ] && exit 0
 
 # (1) パス名ベースのブロックリスト
-secret_re='(^|/)\.kaggle/|kaggle\.json$|\.credentials\.json$|(^|/)id_(rsa|dsa|ecdsa|ed25519)($|\.)|\.pem$|\.key$|\.p12$|\.pfx$|\.keystore$|(^|/)\.npmrc$|(^|/)\.aws/credentials$|(^|/)\.ssh/|\.env$'
+#   .env は .env.local / .env.production / .runpod.env などの変種ごと止める
+secret_re='(^|/)\.kaggle/|kaggle\.json$|\.credentials\.json$|(^|/)id_(rsa|dsa|ecdsa|ed25519)($|\.)|\.pem$|\.key$|\.p12$|\.pfx$|\.keystore$|(^|/)\.npmrc$|(^|/)\.aws/credentials$|(^|/)\.ssh/|\.env(\.[A-Za-z0-9_.-]+)?$'
 
 # (2) 中身ベースのトークン検出（高シグナル＝誤検知の少ないものだけ）
-#   PRIVATE KEY ヘッダ / AWS / GitHub(PAT) / Hugging Face / Google API / Slack
-content_re='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[posru]_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{22,}|hf_[0-9A-Za-z]{34}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[0-9A-Za-z-]{10,}'
+#   PRIVATE KEY ヘッダ / AWS / GitHub(PAT) / Hugging Face / Google API / Slack /
+#   RunPod / OpenAI・Anthropic (sk- 系。\b で task- 等の語中ヒットを防ぐ) / Slack Webhook URL
+content_re='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[posru]_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{22,}|hf_[0-9A-Za-z]{34}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[0-9A-Za-z-]{10,}|rpa_[0-9A-Za-z]{20,}|\bsk-[0-9A-Za-z_-]{20,}|hooks\.slack\.com/services/[A-Za-z0-9/]+'
 
-# 誤検知を許す例外（テンプレ用 *.example はパス・中身とも素通し）
+# 誤検知を許す例外（テンプレ用 *.example は「パス判定のみ」免除。
+# 中身チェックは example にも必ずかける＝本物のトークンを書いたら止める）
 allow_re='\.example$'
 
 path_hits=()
@@ -43,22 +47,17 @@ content_hits=()
 for f in "${staged[@]}"; do
   [ -z "$f" ] && continue
 
-  # 例外（*.example）は何もチェックしない
-  if printf '%s' "$f" | grep -Eiq "$allow_re"; then
-    continue
-  fi
-
-  # (1) パス判定
-  if printf '%s' "$f" | grep -Eiq "$secret_re"; then
-    path_hits+=("$f")
-  fi
-
-  # (2) 中身判定（1MB 超・バイナリはスキップ。grep -I がバイナリを除外）
-  size="$(git cat-file -s ":$f" 2>/dev/null || echo 0)"
-  if [ "$size" -le 1048576 ]; then
-    if git show ":$f" 2>/dev/null | grep -EIq -- "$content_re"; then
-      content_hits+=("$f")
+  # (1) パス判定（*.example だけはファイル名による検出を免除）
+  if ! printf '%s' "$f" | grep -Eiq "$allow_re"; then
+    if printf '%s' "$f" | grep -Eiq "$secret_re"; then
+      path_hits+=("$f")
     fi
+  fi
+
+  # (2) 中身判定（巨大ファイルも先頭 1MB は必ず検査する＝モデル入り .ipynb 等の
+  #     無条件スキップ穴を塞ぐ。grep -I がバイナリを除外）
+  if git show ":$f" 2>/dev/null | head -c 1048576 | grep -EIq -- "$content_re"; then
+    content_hits+=("$f")
   fi
 done
 

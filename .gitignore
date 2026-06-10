@@ -1,7 +1,9 @@
 # task specific
 overlay/
 mlruns/
-datasets/
+# datasets/ は中身だけ無視する（ディレクトリごと無視すると .gitkeep を再 include できないため）
+datasets/*
+!datasets/.gitkeep
 dataset/
 envs/
 results/
@@ -165,6 +167,8 @@ celerybeat.pid
 .env
 # RunPod etc. secret files (e.g. .runpod.env); keep the *.env.example templates tracked
 *.env
+# .env variants such as .env.local / .env.production
+.env.*
 !*.env.example
 .venv
 env/
@@ -223,7 +227,27 @@ kaggle.json
 
 # npm / シェル履歴（HOME マウントで紛れ込む）
 .npm/
+.npm-global/
 .bash_history
+
+# 認証情報を含む dotfile / ディレクトリ（HOME マウントでリポジトリ直下に湧く）
+# ※ .gitignore は行頭以外の # をコメント扱いしないため、理由は行を分けて書く
+# curl / git の平文パスワード
+.netrc
+# git credential store の平文トークン
+.git-credentials
+# credential helper 設定・メールアドレス等
+.gitconfig
+# gh / gcloud など各種 CLI の認証・設定
+.config/
+# rundocker.sh が読む Hugging Face トークンファイル
+.hf_token
+# AWS 認証情報
+.aws/
+# docker login の config.json（レジストリ認証）
+.docker/
+# huggingface-cli login のトークン
+.huggingface/
 
 # SSH / 秘密鍵・証明書
 .ssh/

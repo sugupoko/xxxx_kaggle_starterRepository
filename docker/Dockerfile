@@ -6,7 +6,8 @@
 #   - 起動:    bash rundocker.sh               （リポジトリ直下で）
 #
 #   ※ ホスト固有の設定（マウントするドライブ等）は Dockerfile には書かず、
-#     rundocker.sh 側で環境変数で渡す。イメージはどのマシンでも同じものになる。
+#     rundocker.sh 側で環境変数で渡す。同一 Dockerfile からほぼ同一の環境を
+#     再現できる（pip/npm はビルド時期によりマイナーバージョン差が出る）。
 #==============================================================================#
 
 #------------------------------------------------------------------------------#
@@ -85,23 +86,60 @@ ENV LANG=ja_JP.UTF-8 LANGUAGE=ja_JP:ja LC_ALL=ja_JP.UTF-8
 
 #------------------------------------------------------------------------------#
 # 6) 非 root ユーザー作成 + sudo（NOPASSWD）
+#    方針: どんなホスト UID/GID が来ても最後の `USER ${USERNAME}` が必ず成立させる。
+#      - UID/GID=0（root でビルド）は非 root 運用の趣旨に反するので、警告を出して
+#        1000:1000 にフォールバックする
+#      - UID/GID がベースイメージの既存ユーザー/グループと衝突した場合は、その
+#        既存エントリを usermod/groupmod で ${USERNAME} にリネームして引き継ぐ
+#        （旧版は衝突時に useradd をスキップ → ${USERNAME} 不在で USER が失敗していた）
 #------------------------------------------------------------------------------#
 RUN set -eux; \
-    if ! getent group "${GID}" >/dev/null; then groupadd -g "${GID}" "${USERNAME}"; fi; \
-    if ! getent passwd "${UID}" >/dev/null; then useradd -m -u "${UID}" -g "${GID}" -s /bin/bash "${USERNAME}"; fi; \
+    uid="${UID}"; gid="${GID}"; \
+    if [ "${uid}" -eq 0 ] || [ "${gid}" -eq 0 ]; then \
+      echo "WARNING: UID/GID=0 (root) was given; falling back to 1000:1000" >&2; \
+      uid=1000; gid=1000; \
+    fi; \
+    # --- グループ: 目的の GID を ${USERNAME} 名で確実に用意する ---
+    if getent group "${gid}" >/dev/null; then \
+      grp="$(getent group "${gid}" | cut -d: -f1)"; \
+      if [ "${grp}" != "${USERNAME}" ]; then \
+        if getent group "${USERNAME}" >/dev/null; then groupmod -n "${USERNAME}_orig" "${USERNAME}"; fi; \
+        groupmod -n "${USERNAME}" "${grp}"; \
+      fi; \
+    elif getent group "${USERNAME}" >/dev/null; then \
+      groupmod -g "${gid}" "${USERNAME}"; \
+    else \
+      groupadd -g "${gid}" "${USERNAME}"; \
+    fi; \
+    # --- ユーザー: 目的の UID を ${USERNAME} 名で確実に用意する ---
+    if getent passwd "${uid}" >/dev/null; then \
+      usr="$(getent passwd "${uid}" | cut -d: -f1)"; \
+      if [ "${usr}" != "${USERNAME}" ]; then \
+        if getent passwd "${USERNAME}" >/dev/null; then usermod -l "${USERNAME}_orig" "${USERNAME}"; fi; \
+        usermod -l "${USERNAME}" "${usr}"; \
+      fi; \
+      usermod -d "/home/${USERNAME}" -g "${gid}" -s /bin/bash "${USERNAME}"; \
+    elif getent passwd "${USERNAME}" >/dev/null; then \
+      usermod -u "${uid}" -d "/home/${USERNAME}" -g "${gid}" -s /bin/bash "${USERNAME}"; \
+    else \
+      useradd -m -u "${uid}" -g "${gid}" -s /bin/bash "${USERNAME}"; \
+    fi; \
     mkdir -p /home/${USERNAME}/.npm-global /workspace; \
-    chown -R "${UID}:${GID}" /home/${USERNAME} /workspace; \
+    chown -R "${uid}:${gid}" /home/${USERNAME} /workspace; \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME}; \
     chmod 0440 /etc/sudoers.d/${USERNAME}
 
 #------------------------------------------------------------------------------#
 # 7) Python packages（torch はベース同梱なので再インストールしない）
 #    ※ opencv-python と opencv-contrib-python の重複を contrib 一本に整理
+#    ※ メジャーバージョンの範囲ピン: ビルド時期による破壊的変更（メジャー更新）
+#      は防ぐが、マイナー/パッチはビルド時点の最新が入る。完全固定したい場合は
+#      `pip freeze` の結果で == に置き換えること。
 #------------------------------------------------------------------------------#
 RUN set -eux; \
     pip install --no-cache-dir \
-      scipy opencv-contrib-python \
-      pandas tqdm albumentations scikit-learn seaborn
+      "scipy<2" "opencv-contrib-python<5" \
+      "pandas<3" "tqdm<5" "albumentations<3" "scikit-learn<2" "seaborn<1"
 
 #------------------------------------------------------------------------------#
 # 8) Claude Code を「システム側」に導入（root グローバル）
@@ -109,6 +147,7 @@ RUN set -eux; \
 #      際に隠れて消える。システム側 (/usr/...) に入れておけば上書きされない。
 #    ※ NPM_CONFIG_PREFIX を設定する「前」に入れること（前に置かないとユーザー
 #      ホーム配下に入ってしまう）。
+#    ※ バージョンはピンしない（ビルド時点の最新が入る）。CLI は自動更新前提のため。
 #------------------------------------------------------------------------------#
 RUN npm i -g --no-audit --omit=dev @anthropic-ai/claude-code
 

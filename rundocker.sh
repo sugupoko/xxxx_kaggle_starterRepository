@@ -4,7 +4,14 @@ set -euo pipefail
 IMAGE_NAME="claude"
 
 # 作業フォルダ：引数で渡せばそれを、無ければ「今いるフォルダ」を使う
+#   ※ 相対パスのまま -v に渡すと docker が「named volume」と解釈して無言で
+#     別物（空ボリューム）が起動するため、存在チェックして必ず絶対パス化する。
 HOST_DIR="${1:-$PWD}"
+if [ ! -d "${HOST_DIR}" ]; then
+  echo "[ERROR] 作業フォルダが見つかりません: ${HOST_DIR}" >&2
+  exit 1
+fi
+HOST_DIR="$(cd "${HOST_DIR}" && pwd)"
 
 CONTAINER_HOME="/home/user"   # Dockerfile の USERNAME に合わせる
 
@@ -35,8 +42,11 @@ if [ -d "${SHARED_KAGGLE}" ]; then
 fi
 
 # ── Hugging Face トークン：WSL 側のファイルに1回置いて、毎回 HF_TOKEN として渡す ──
-#   事前準備（WSL 側で1回だけ）:
-#     printf '%s' 'hf_xxxxxxxx' > ~/.hf_token && chmod 600 ~/.hf_token
+#   事前準備（必ず「ホスト側」で1回だけ実行する。コンテナ内で実行すると ~ が
+#   リポジトリ直下＝作業フォルダになり、トークンが repo に実体化してしまう）:
+#     read -rs TOKEN && printf '%s' "$TOKEN" > ~/.hf_token && unset TOKEN && chmod 600 ~/.hf_token
+#   （read -s なら生トークンがシェル履歴に残らない。エディタで直接作成してもよい。
+#     `echo 'hf_xxx' > ~/.hf_token` のような直書きは履歴に残るので禁止）
 #   huggingface_hub / transformers / datasets は HF_TOKEN を自動で認証に使う。
 HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.hf_token}"
 HF_OPTS=()
@@ -89,13 +99,13 @@ else
   done
 fi
 
+# --ipc=host はホストの /dev/shm をそのまま共有するため --shm-size は不要（指定しても無効）
 docker run --rm -it \
   "${GPU_OPTS[@]}" \
   -e LANG=ja_JP.UTF-8 -e LC_ALL=ja_JP.UTF-8 \
   -e HOME="${CONTAINER_HOME}" \
   "${GUI_OPTS[@]}" \
   "${DRIVE_OPTS[@]}" \
-  --shm-size=64g \
   --ipc=host \
   -v "${HOST_DIR}:${CONTAINER_HOME}" \
   -v "${HOST_DIR}:${WORKDIR_IN}" \
