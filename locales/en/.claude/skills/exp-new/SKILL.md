@@ -40,6 +40,7 @@ argument-hint: "<experiment_name> [--human for human-style exp200_xxx]"
 <!-- Append after each run -->
 
 ## File Structure
+- train.py
 - src/
 - config.yaml
 - run.sh
@@ -65,25 +66,27 @@ argument-hint: "<experiment_name> [--human for human-style exp200_xxx]"
 # Train + inference in one script
 # IMPORTANT: cd "$(dirname "$0")" must run before python.
 #            Without it, results/ may be created at the repo root or elsewhere.
+# Usage: bash run.sh data.fold=0 trainer.max_epochs=30
+#        Arguments override config.yaml in OmegaConf dotlist format (there is no --config flag)
 set -e
 
 cd "$(dirname "$0")"
 
-# Train
-python src/train.py --config config.yaml
+# Train (train.py lives directly in the experiment folder; pass arguments through)
+python train.py "$@"
 
 # Inference (as needed)
-# python src/predict.py --config config.yaml --ckpt results/.../best.ckpt
+# python predict.py ckpt_path=results/<experiment_name>/fold0/last.ckpt
 ```
 
 6. **Update `experiment.name` in config.yaml** to the new folder name
 
 7. **Make the results/ output path relative to the experiment folder**:
    - Verify `train.py`'s output path is not cwd-dependent
-   - If needed, rewrite to use the **absolute path resolved from the experiment folder**: `output_dir = Path(__file__).resolve().parent.parent / 'results' / experiment_name / f'fold{fold}'`
+   - If needed, rewrite to use the **absolute path resolved from the experiment folder**: `output_dir = Path(__file__).resolve().parent / 'results' / experiment_name / f'fold{fold}'` (one `parent` because train.py lives directly in the experiment folder)
    - Run a quick training trial to confirm output appears in `workspace/<new-folder>/results/...` before reporting to the user
 
-7. **Report**:
+8. **Report**:
    - Path of the created folder
    - Paths of SESSION_NOTES.md and run.sh
    - Next action (edit config.yaml → `bash workspace/<new-folder>/run.sh`)

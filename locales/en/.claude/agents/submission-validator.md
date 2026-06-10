@@ -32,7 +32,7 @@ Ask the user if you can't determine it. For Kaggle, distinguish CSV vs Code by c
 
 ### 1'. (A') Kaggle Code Competition checks
 
-Reference: `tools/kaggle_code_competition_submission.md`
+Reference: `tools/kaggle_code_competition_submission.md` (currently Japanese only)
 
 - Required files present:
   - [ ] `inference_notebook.py` or `inference_notebook.ipynb`

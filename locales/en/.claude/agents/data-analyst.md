@@ -26,7 +26,7 @@ Use matplotlib/seaborn with simple plots that don't require special fonts.
 
 ## Output
 
-- Save analysis results to `competition/overview.md`
-- Save visualization images to `competition/`
+- Save analysis results to `survey/competition/overview.md`
+- Save visualization images to `survey/competition/`
 - Propose feature engineering ideas if applicable
 - Summarize findings concisely as bullet points

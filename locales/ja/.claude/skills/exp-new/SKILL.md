@@ -40,6 +40,7 @@ argument-hint: "<実験名> [--human で人間用 exp200_xxx 形式]"
 <!-- 実験を回したら追記 -->
 
 ## ファイル構成
+- train.py
 - src/
 - config.yaml
 - run.sh
@@ -65,25 +66,27 @@ argument-hint: "<実験名> [--human で人間用 exp200_xxx 形式]"
 # 学習・推論を一発で回すスクリプト
 # 重要: cd "$(dirname "$0")" で実験フォルダに移動してから python を呼ぶ。
 #       これがないと results/ がリポジトリルートや別の場所に生成されてしまう。
+# 使い方: bash run.sh data.fold=0 trainer.max_epochs=30
+#         引数は OmegaConf dotlist 形式で config.yaml を上書きする（--config フラグは存在しない）
 set -e
 
 cd "$(dirname "$0")"
 
-# 学習
-python src/train.py --config config.yaml
+# 学習（train.py は実験フォルダ直下。引数はそのまま渡す）
+python train.py "$@"
 
 # 推論（必要に応じて）
-# python src/predict.py --config config.yaml --ckpt results/.../best.ckpt
+# python predict.py ckpt_path=results/<実験名>/fold0/last.ckpt
 ```
 
 6. **config.yaml の experiment.name を新フォルダ名に書き換え**
 
 7. **results/ の出力先を実験フォルダ基準にする**:
    - `train.py` の出力先が cwd 依存になっていないか確認
-   - 必要なら `output_dir = Path(__file__).resolve().parent.parent / 'results' / experiment_name / f'fold{fold}'` のように**実験フォルダ基準の絶対パス**に書き換える
+   - 必要なら `output_dir = Path(__file__).resolve().parent / 'results' / experiment_name / f'fold{fold}'` のように**実験フォルダ基準の絶対パス**に書き換える（train.py は実験フォルダ直下にあるため parent 1段）
    - 学習を試走して `workspace/<新フォルダ名>/results/...` に出力されることを確認してからユーザーに報告
 
-7. **報告**:
+8. **報告**:
    - 作成したフォルダのパス
    - SESSION_NOTES.md と run.sh のパス
    - 次にすべきアクション（config.yaml を編集 → `bash workspace/<新フォルダ名>/run.sh`）

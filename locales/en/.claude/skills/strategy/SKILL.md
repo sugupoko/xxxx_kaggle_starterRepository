@@ -19,10 +19,11 @@ argument-hint: "[additional focus or blank for default synthesis]"
      - **Phase detection must be the first thing** (time-based + milestone-based; warn on misalignment)
      - **All subsequent proposals are restricted to that phase's "do" list** (see KAGGLE_DIRECTION.md "Phase Guidance")
      - `$ARGUMENTS` as additional focus if given (e.g., "focus on ensemble strategy", "emphasize LB shake risk")
-     - Output target: `daily_reports/strategy_YYYYMMDD.md` or append to today's daily report's "Strategy & Roadmap" section
+     - Output target: append to the "Strategy & Roadmap" section of today's daily report `daily_reports/YYYYMMDD.md`
 
-3. **Save agent output**:
-   - Save to `daily_reports/strategy_YYYYMMDD.md` (number sequentially if exists)
+3. **Append agent output to today's daily report**:
+   - Append to the "Strategy & Roadmap" section of today's daily report `daily_reports/YYYYMMDD.md` (**never create a separate `strategy_*.md` file** — records are consolidated in the daily report)
+   - If today's daily report doesn't exist yet, create it via the `/daily-report` steps first, then append
    - Summarize key proposals (**phase detection**, safe+bold, unexplored, risks) for the user
    - **Surface misalignment warnings first** (e.g., "Entered mid phase but no working baseline")
 

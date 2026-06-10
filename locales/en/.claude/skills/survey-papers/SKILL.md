@@ -28,9 +28,10 @@ agent: Explore
    - Key results
    - Applicability to this competition
 
-4. **Save results**:
-   - Append to `survey/papers/maybe_related_research.md`
-   - Organize by category (dataset papers, method papers, benchmark papers, tools/libraries)
+4. **Return the full research output**:
+   - This skill runs in `context: fork` (read-only Explore agent), so **do not save files inside the fork**
+   - Return the **full research output**, organized by category (dataset papers, method papers, benchmark papers, tools/libraries), as the final response
+   - The receiving main conversation appends and saves it to `survey/papers/maybe_related_research.md`
 
 5. **Propose transfer ideas**:
    - List methods potentially applicable to this competition

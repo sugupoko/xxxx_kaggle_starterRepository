@@ -17,7 +17,7 @@ argument-hint: "[YYYY-MM-DD to specify date, blank for today]"
    - Past reports must **never be edited** (CLAUDE.md rule)
 
 3. **Read yesterday's report**:
-   - Get the latest file under `daily_reports/`
+   - Get the latest file matching `daily_reports/[0-9]*.md` (restrict the glob so non-report .md files are never picked up by mistake)
    - Extract "Next Steps", pending TODOs, "Numerical Summary", "Strategy & Roadmap"
 
 4. **Carry over recent experiment results** (parallel-load, leveraging 1M ctx):

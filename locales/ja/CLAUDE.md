@@ -85,9 +85,9 @@ Kaggle だけでなく、grand-challenge.org / CodaBench / 独自プラットフ
   - フォーマット: `%(asctime)s | %(levelname)s | %(message)s`
 - **全出力は `workspace/expXXX_xxx/results/{experiment_name}/foldN/` に集約する**
   - **必ず実験フォルダ直下の `results/` に出力する**。リポジトリルートや `workspace/results/` などに作らない
-  - `train.py` の冒頭で `output_dir = Path(__file__).resolve().parent.parent / 'results' / experiment_name / f'fold{fold}'` のように**実験フォルダ基準で絶対パスを組む**こと。`Path('results/...')` のような相対パスは cwd 依存で事故るので禁止
+  - `train.py` の冒頭で `output_dir = Path(__file__).resolve().parent / 'results' / experiment_name / f'fold{fold}'` のように**実験フォルダ基準で絶対パスを組む**こと（`train.py` は実験フォルダ直下に置くため parent 1段）。`Path('results/...')` のような相対パスは cwd 依存で事故るので禁止
   - config.yaml の `output_dir` も実験フォルダからの相対 / 絶対パスで明示する
-  - `run.sh` 内では `cd "$(dirname "$0")"` してから `python src/train.py` を呼ぶ（これも cwd 依存事故防止）
+  - `run.sh` 内では `cd "$(dirname "$0")"` してから `python train.py "$@"` を呼ぶ（これも cwd 依存事故防止）。引数は OmegaConf dotlist 形式（例: `data.fold=0`）で config.yaml を上書きする。`--config` フラグは存在しない
   - 出力例: `workspace/expA00_baseline/results/expA00_baseline/fold0/best_model.ckpt`
   - best_model, checkpoint, log, training_log.json, **config.yaml** を全て同一ディレクトリに保存する
   - **config.yamlは学習開始時に自動コピーされる**（再現性のため）
@@ -158,9 +158,9 @@ Kaggle だけでなく、grand-challenge.org / CodaBench / 独自プラットフ
 
 **fold割り当ての永続化（`workspace/fold/`）:**
 - fold割り当ては `workspace/fold/{version}/folds.csv` に保存し、全実験で共有する
-- `generate_folds.py` で生成。バージョン管理付き
+- `workspace/fold/generate_folds.py` で生成。バージョン管理付き
 - 前処理やデータを変更した場合は新バージョンを作る。古いバージョンは削除しない
-- config.yamlの `cv.folds_csv` で使用バージョンを指定する
+- config.yamlの `data.folds_csv` で使用バージョンを指定する
 - 設計意図・切り方の詳細は `workspace/fold/README.md` に記載
 
 ## 提出パイプライン（`submit/`）
@@ -297,8 +297,8 @@ submit/v001_baseline/
 
 `.claude/settings.json` に以下が設定されている。`/hooks` で確認・編集可能:
 
-- **SessionStart**: 最新の `daily_reports/*.md` と `knowledge/INDEX.md`（ナレッジ目次）を context に自動注入する。セッション開始時に状況把握とストック知識の所在把握をスキップしないため
-- **Stop**: セッション終了時に今日の日報があれば `<!-- session ended: ... -->` マーカーを追記する。日次の作業ログを残すため
+- **SessionStart**: 最新の日報（`daily_reports/[0-9]*.md` の最新）と `knowledge/INDEX.md`（ナレッジ目次）を context に自動注入する。セッション開始時に状況把握とストック知識の所在把握をスキップしないため
+- **SessionEnd**: セッション終了時に今日の日報があれば `<!-- session ended: ... -->` マーカーを追記する。日次の作業ログを残すため（応答完了のたびに発火する Stop ではなく SessionEnd を使う）
 
 ## 利用可能なSkills
 

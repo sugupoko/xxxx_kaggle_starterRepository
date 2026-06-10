@@ -1,7 +1,7 @@
 ---
 name: kaggle-researcher
 description: データ分析コンペの調査専門エージェント。Kaggle だけでなく grand-challenge.org / CodaBench / 独自プラットフォームにも対応。論文検索、類似コンペの解法調査、ディスカッション分析を行う。リサーチや調査が必要なときにproactiveに使う。
-tools: Read, Grep, Glob, WebSearch, WebFetch, Bash
+tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
 model: sonnet
 ---
 

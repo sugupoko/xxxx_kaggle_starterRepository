@@ -45,7 +45,7 @@ model: opus
 - データ分割の永続化（`workspace/fold/{version}/folds.csv` を全実験で共有しているか）
 - config.yaml が `results/` にコピーされているか
 - 環境（pip freeze / requirements.txt）の固定
-- **出力パスが cwd 依存でない**: `Path('results/...')` のような相対パスを使っていないか（cwd によって `workspace/expXXX/results/`、`workspace/results/`、リポジトリルート直下など別の場所に生成される事故になる）。`Path(__file__).resolve().parent.parent / 'results' / ...` のように**実験フォルダ基準で絶対化**すべき
+- **出力パスが cwd 依存でない**: `Path('results/...')` のような相対パスを使っていないか（cwd によって `workspace/expXXX/results/`、`workspace/results/`、リポジトリルート直下など別の場所に生成される事故になる）。`Path(__file__).resolve().parent / 'results' / ...` のように**実験フォルダ基準で絶対化**すべき（`train.py` は実験フォルダ直下に置くため parent 1段）
 - `run.sh` で `cd "$(dirname "$0")"` してから python を呼んでいるか
 
 ### 5. コンペ固有

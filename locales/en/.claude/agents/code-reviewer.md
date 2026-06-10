@@ -45,7 +45,7 @@ Leakage, metric bugs, and broken checkpoints are classic patterns that inflate C
 - Data split persistence (is `workspace/fold/{version}/folds.csv` shared across all experiments?)
 - Is config.yaml copied to `results/`?
 - Environment (pip freeze / requirements.txt) pinning
-- **Output paths are not cwd-dependent**: Avoid `Path('results/...')`-style relative paths. Depending on cwd, results may end up in `workspace/expXXX/results/`, `workspace/results/`, or even the repo root. Always anchor to the experiment folder: `Path(__file__).resolve().parent.parent / 'results' / ...`
+- **Output paths are not cwd-dependent**: Avoid `Path('results/...')`-style relative paths. Depending on cwd, results may end up in `workspace/expXXX/results/`, `workspace/results/`, or even the repo root. Always anchor to the experiment folder: `Path(__file__).resolve().parent / 'results' / ...` (one `parent`, since `train.py` sits at the experiment-folder root)
 - Does `run.sh` `cd "$(dirname "$0")"` before invoking python?
 
 ### 5. Competition-Specific

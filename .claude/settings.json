@@ -5,23 +5,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "latest=$(ls -t daily_reports/*.md 2>/dev/null | head -1); if [ -n \"$latest\" ]; then echo \"[Latest daily report: $latest]\"; cat \"$latest\"; else echo \"[No daily report yet. Consider running /daily-report]\"; fi",
+            "command": "latest=$(ls -t \"$CLAUDE_PROJECT_DIR\"/daily_reports/[0-9]*.md 2>/dev/null | head -1); if [ -n \"$latest\" ]; then echo \"[Latest daily report: $latest]\"; cat \"$latest\"; else echo \"[No daily report yet. Consider running /daily-report]\"; fi",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "if [ -f knowledge/INDEX.md ]; then echo \"[Knowledge wiki index — load only the pages you need]\"; cat knowledge/INDEX.md; else echo \"[No knowledge wiki yet. Use /wiki to start accumulating distilled knowledge]\"; fi",
+            "command": "if [ -f \"$CLAUDE_PROJECT_DIR/knowledge/INDEX.md\" ]; then echo \"[Knowledge wiki index — load only the pages you need]\"; cat \"$CLAUDE_PROJECT_DIR/knowledge/INDEX.md\"; else echo \"[No knowledge wiki yet. Use /wiki to start accumulating distilled knowledge]\"; fi",
             "timeout": 10
           }
         ]
       }
     ],
-    "Stop": [
+    "SessionEnd": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "today=$(date +%Y%m%d); report=\"daily_reports/${today}.md\"; if [ -f \"$report\" ]; then echo \"\" >> \"$report\"; echo \"<!-- session ended: $(date +%Y-%m-%dT%H:%M:%S%z) -->\" >> \"$report\"; fi",
+            "command": "today=$(date +%Y%m%d); report=\"$CLAUDE_PROJECT_DIR/daily_reports/${today}.md\"; if [ -f \"$report\" ]; then echo \"\" >> \"$report\"; echo \"<!-- session ended: $(date +%Y-%m-%dT%H:%M:%S%z) -->\" >> \"$report\"; fi",
             "timeout": 5
           }
         ]

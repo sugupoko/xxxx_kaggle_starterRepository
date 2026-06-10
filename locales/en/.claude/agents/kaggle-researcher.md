@@ -1,7 +1,7 @@
 ---
 name: kaggle-researcher
 description: Data science competition research specialist agent. Supports Kaggle as well as non-Kaggle platforms (grand-challenge.org, CodaBench, custom sites). Performs paper searches, similar competition solution research, and discussion analysis. Use proactively when research or investigation is needed.
-tools: Read, Grep, Glob, WebSearch, WebFetch, Bash
+tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
 model: sonnet
 ---
 

@@ -12,7 +12,7 @@ This template is designed to run on **Claude Opus (1M context)**. To leverage th
 - **Code review**: Parallel-load `src/`, `config.yaml`, fold generation scripts, and `KAGGLE_DIRECTION.md` **simultaneously** before checking consistency (trace the leakage path end-to-end: training → inference → submission)
 - **Strategy**: See the "line," not the "points." The `competition-strategist` agent / `/strategy` skill is optimized for cross-experiment synthesis
 - **Background execution**: Run training jobs, scraping, long validations with `run_in_background` or via `/loop` / `/schedule`
-- **External GPU**: When local GPU is not enough, run training on RunPod (`tools/runpod/`) — connection / key handling / cost control verified on real hardware. Keys live in `.runpod.env` (gitignored); never expose raw values
+- **External GPU**: When local GPU is not enough, run training on RunPod (`tools/runpod/` — README currently Japanese only) — connection / key handling / cost control verified on real hardware. Keys live in `.runpod.env` (gitignored); never expose raw values
 - **Plan mode**: Use Plan mode before major direction changes (moving to a new exp number, switching submission format, etc.)
 
 Parallel reading is OK for **your own competition files**. You don't need to load all of `reference/` or every byte of `datasets/*`.
@@ -85,9 +85,9 @@ To avoid local optima, bold ideas should be "nobody would normally do that" leve
   - Format: `%(asctime)s | %(levelname)s | %(message)s`
 - **All outputs go to `workspace/expXXX_xxx/results/{experiment_name}/foldN/`**
   - **Always write to `results/` directly under the experiment folder.** Never create it at the repo root or under `workspace/results/`
-  - In `train.py`, build the path **relative to the experiment folder** with absolute resolution: `output_dir = Path(__file__).resolve().parent.parent / 'results' / experiment_name / f'fold{fold}'`. Do NOT use `Path('results/...')` — relative paths depend on cwd and cause accidents
+  - In `train.py`, build the path **relative to the experiment folder** with absolute resolution: `output_dir = Path(__file__).resolve().parent / 'results' / experiment_name / f'fold{fold}'` (one `parent` because `train.py` lives directly in the experiment folder). Do NOT use `Path('results/...')` — relative paths depend on cwd and cause accidents
   - Specify `output_dir` in config.yaml as a path relative to the experiment folder (or absolute)
-  - In `run.sh`, `cd "$(dirname "$0")"` before calling `python src/train.py` (also prevents cwd-dependent accidents)
+  - In `run.sh`, `cd "$(dirname "$0")"` before calling `python train.py "$@"` (also prevents cwd-dependent accidents). Arguments override config.yaml in OmegaConf dotlist format (e.g., `data.fold=0`). There is no `--config` flag
   - Example output: `workspace/expA00_baseline/results/expA00_baseline/fold0/best_model.ckpt`
   - Save best_model, checkpoint, log, training_log.json, **config.yaml** all in the same directory
   - **config.yaml is auto-copied at training start** (for reproducibility)
@@ -158,9 +158,9 @@ To avoid local optima, bold ideas should be "nobody would normally do that" leve
 
 **Fold assignment persistence (`workspace/fold/`):**
 - Save fold assignments in `workspace/fold/{version}/folds.csv`, shared across all experiments
-- Generate with `generate_folds.py`. Version controlled
+- Generate with `workspace/fold/generate_folds.py`. Version controlled
 - Create new version when preprocessing or data changes. Never delete old versions
-- Specify version in config.yaml via `cv.folds_csv`
+- Specify version in config.yaml via `data.folds_csv`
 - Document design intent and split details in `workspace/fold/README.md`
 
 ## Submission Pipeline (`submit/`)
@@ -219,7 +219,7 @@ submit/v001_baseline/
     └── (trained model files)
 ```
 
-- **For the full flow, templates, and gotchas, see `tools/kaggle_code_competition_submission.md`**
+- **For the full flow, templates, and gotchas, see `tools/kaggle_code_competition_submission.md`** (currently Japanese only)
 - Flow: `upload.sh` uploads Dataset + pushes Notebook → Save & Run All on Kaggle UI → "Submit to Competition" (manual)
 - Required: `enable_internet: false` (no pip install), self-contained (no `kernel_sources` imports)
 - Validation: assert format at notebook end (`assert len(sub) == EXPECTED_ROWS` etc.)
@@ -291,14 +291,14 @@ Order: Read outputs → Identify what's wrong → Address the cause → Verify w
 
 - `reference/` contains a template for 2.5D segmentation (PyTorch Lightning + timm + smp)
 - Use as a base for new experiments
-- See `reference/README.md` for details
+- See `reference/README.md` for details (currently Japanese only)
 
 ## Automation (Hooks)
 
 `.claude/settings.json` ships with these hooks. Inspect/edit via `/hooks`:
 
-- **SessionStart**: Auto-inject the latest `daily_reports/*.md` and `knowledge/INDEX.md` (the knowledge index) into context. Ensures you never skip status check or lose track of where stock knowledge lives
-- **Stop**: When the session ends, append a `<!-- session ended: ... -->` marker to today's daily report (if it exists). Keeps a daily activity log
+- **SessionStart**: Auto-inject the latest daily report (newest match of `daily_reports/[0-9]*.md`) and `knowledge/INDEX.md` (the knowledge index) into context. Ensures you never skip status check or lose track of where stock knowledge lives
+- **SessionEnd**: When the session ends, append a `<!-- session ended: ... -->` marker to today's daily report (if it exists). Keeps a daily activity log (uses SessionEnd, not Stop — Stop fires on every completed response)
 
 ## Available Skills
 

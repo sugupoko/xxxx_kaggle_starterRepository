@@ -1,6 +1,6 @@
 ---
 name: submit-check
-description: 提出物の事前検証を実行する。Kaggle CSV / 予測ファイル zip / Docker コンテナの3形式に対応。submission-validator agent を呼び出して機械的にチェックする。提出直前に必ず使う。
+description: 提出物の事前検証を実行する。Kaggle CSV / Kaggle Code Competition / 予測ファイル zip / Docker コンテナの4形式に対応。submission-validator agent を呼び出して機械的にチェックする。提出直前に必ず使う。
 argument-hint: "<submit/v00X_<元exp>_xxx のパス> [--platform kaggle|gc|codabench]"
 ---
 
@@ -15,12 +15,14 @@ argument-hint: "<submit/v00X_<元exp>_xxx のパス> [--platform kaggle|gc|codab
 2. **形式判定**:
    - フォルダ内のファイル構成から判定:
      - `notebook.py` あり → (A) Kaggle CSV型
+     - `kernel-metadata.json` + `dataset-metadata.json` あり → (A') Kaggle Code Competition 型
      - `predict.py` + `run.sh` あり → (B) 予測ファイル zip 型
      - `Dockerfile` + `process.py` あり → (C) Docker コンテナ型
 
 3. **submission-validator agent を呼び出し**:
    - 上で判定した形式と提出フォルダパスを渡して実行依頼
    - agent は自動で形式に応じた検証を行う
+   - (A') の場合は submission-validator の「1'. Kaggle Code Competition 型のチェック」（kernel-metadata / dataset-metadata / self-contained notebook の検証）を実行させる
 
 4. **検証結果を集約して報告**:
    - Pass / Fail / Warning を上から順に表示
