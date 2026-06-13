@@ -18,6 +18,7 @@
 | `runpod_ops.py` | ローカルから pod 操作（Python SDK版。up/list/stop/down、Network Volume対応） |
 | `smoke_test.sh` | 疎通テスト（最安GPUで起動→RUNNING待ち→接続情報→teardown） |
 | `startup.sh` | pod内で実行する起動スクリプト（鍵注入・private clone・自動停止）。鍵の値は持たない |
+| `pod_run.sh` | pod内の**1ジョブ学習エントリ**（汎用テンプレ）。Kaggle dataset 取得→自動展開検出→学習→`/workspace/out_<TAG>` 集約。多pod並列で各 pod に `setsid` で1回だけ投げる（§11） |
 | `.runpod.env.example` | ローカルの鍵ファイル雛形。コピーして `.runpod.env` を作り値を入れる（**gitignore必須**） |
 
 ---
@@ -280,11 +281,14 @@ sed -i 's#^path:.*#path: /workspace/data#' data/<config>
 <学習コマンド> ... data=/workspace/data/<config> ... project=/workspace/runs name=run   # 同名既存だと自動採番される例あり
 # 成果物: /workspace/runs/.../best.* → scp でローカル/Kaggle/HFに退避
 ```
-**4つの確定罠（フレームワーク非依存）**:
+**確定罠（フレームワーク非依存）**:
 1. `pip` は **`--break-system-packages`** 必須（PEP668。runpod-torch template）
-2. Kaggleは**upした.zipを自動展開** → DL後の展開は**1段だけ**（二重zipにしない）
+2. **Kaggle の zip 展開挙動は一定しない**（自動展開される／`foo.zip`→`foo/` サブフォルダにネストされる／内部 zip が残る、のどれもあり得る）→ **DL 後はパスを決め打ちせず自動検出**する。例: `ROOT=$(dirname "$(find "$DS" -name '<目印ファイル>' | head -1)")`。内部に二重 zip が残っていたらもう1段 unzip（`pod_run.sh` がこの両方を実装済み）
 3. **学習設定のデータルートは絶対パス**（相対 `.` はCWD基準で誤解決して not found になる）
-4. **CLI/SDK `--env` は `{{ RUNPOD_SECRET_x }}` を解決しない** → 鍵は **scp で起動後注入**（`scp -i <key> -P <port> ~/.kaggle/kaggle.json root@<ip>:/root/.kaggle/`）
+4. **dataset 作成直後は処理待ちで download が 404**（`DownloadDataset` 404）→ 十分粘る（**5×20s で足りないことあり**）。`kaggle datasets files <slug>` が中身を返したら準備完了の合図。律速は up 帯域でなく **Kaggle 側の処理待ち**のことが多い（実測: 2GB の up が約51s でも、その後の処理待ちで DL は数分 404）
+5. **owner id は実 username**（`kaggle.json` の `username` フィールド。メール handle とは別物）→ 違うと `Invalid Owner Id` で作成失敗。`dataset-metadata.json` の `"id"` は `<real_username>/<slug>`
+6. **CLI/SDK `--env` は `{{ RUNPOD_SECRET_x }}` を解決しない** → 鍵は **scp で起動後注入**（`scp -i <key> -P <port> ~/.kaggle/kaggle.json root@<ip>:/root/.kaggle/`）
+7. **HF/timm の事前学習重みは未認証だと rate 制限で停滞**（モデルロード前で固まり `num_features` 等のログすら出ない＝ハングに見える）→ `HF_TOKEN` を Secret/scp で注入
 
 ---
 
@@ -294,4 +298,42 @@ source .runpod.env
 bash tools/runpod/smoke_test.sh                 # 最安GPUで起動→RUNNING→接続情報（★数円）
 # ブラウザ Web Terminal で nvidia-smi 確認 → 終わったら:
 bash tools/runpod/smoke_test.sh teardown <POD_ID>
+```
+
+---
+
+## 11. ★多pod並列・デタッチ実行の落とし穴（実地で全部踏んだ）
+
+複数 pod で並列学習する／ssh でバックグラウンド起動する時の事故集。
+**学習フレームワーク非依存・RunPod 非依存の一般的な罠**なので、ssh で長時間ジョブを投げる全場面で効く。
+3モデル×3pod並列の練習で「ワークフローは全段成功するのに完走しない」事象を起こしたが、**原因は環境でなく操作（人間側）の事故**だった。同じ轍を踏まないための鉄則:
+
+### ★最重要: 「1 pod = 1 起動」。起動後は触らない
+- 起動確認が取れず不安になって**再 launch を繰り返すと、同じ pod に学習プロセスが多重 stack** → 同一 GPU で競合して **SIGKILL（"Killed"）**。「ep01 は通るのに ep02 で必ず死ぬ」はメモリでも cgroup でもなくこれ（RAM/GPU に空きがあっても起きる）
+- 対策: launch は**1回だけ**。確認が取れなくても再 launch しない（状態はログ読みで確認）。多重を疑ったら `pgrep -fc <学習スクリプト名>` で数を見て、2以上なら **PID 指定で全消ししてから1本だけ**起動し、以後触らない
+
+### ★完全デタッチは `setsid CMD >log 2>&1 </dev/null &` の3点セット
+- `nohup` **だけ**だと ssh 切断時に SIGHUP で死ぬことがある。`setsid`（新セッション＝controlling terminal から切り離す）が ssh 切断に最も強い
+- **`</dev/null`（stdin リダイレクト）が無いと ssh が return せずハングする**（background プロセスが ssh channel の stdin を掴むため）。**必須**
+- まとめ: `setsid <cmd> >run.log 2>&1 </dev/null &` で「切れても生存・ssh は即 return・ログは残る」
+
+### ★起動確認は「別の ssh call」で。インライン echo は当てにならない
+- `setsid ... & echo OK` の `echo` は backgrounding と競合して**取りこぼす**（"HUNG?" の誤判定になり、上の再 launch 事故を誘発）
+- 正: launch（出力は捨てる）→ 数秒後に**別 call**で `head -1 run.log` を読み、開始マーカー行を確認する
+
+### ★ssh は while-read ループの stdin を食う（古典バグ）
+- `while read host; do ssh "$host" ...; done < pods.txt` は、**ループ内の ssh が pods.txt の残り行を stdin から食って**ループが途中終了する（p1 だけ起動して p2/p3 が起動されない）
+- 対策: `mapfile -t PODS < pods.txt` で**配列化してから for** で回す。または各 ssh に `</dev/null` を付ける
+
+### ★`pkill -f PAT` は自分の cmdline に自己マッチして自殺する
+- `pkill -9 -f '_runner.sh'` を含むコマンド行は、**自身の cmdline にその文字列を持つため自プロセスを kill** して落ちる
+- 対策: **PID 指定 kill**。`pkill -f` を使うなら、パターンを自 cmdline に出ない語にする
+
+### 確定オペレーション手順（多pod並列で次回これだけ守る）
+```
+1. pod を起動（poll-create。GPU はフォールバック前提で複数候補を retry）
+2. Kaggle dataset の準備完了を `kaggle datasets files <slug>` で確認してから pod を使う（§9.5 罠4）
+3. 各pod: kaggle.json / HF_TOKEN を scp 注入 → pod_run.sh を setsid で **1回だけ** launch
+4. 別 call で run.log の start 行を確認 → **数分 hands-off** → epoch 到達をログで確認（pkill / 再launch 厳禁）
+5. 回収（Kaggle push or scp get）→ pod stop+delete ×N → `pod list` 空確認 → 一時鍵 clean
 ```
