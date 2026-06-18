@@ -31,6 +31,13 @@ Kaggle だけでなく、grand-challenge.org / CodaBench / 独自プラットフ
 
 この 7 項目を埋めないまま実装を始めない。
 
+**Simulation コンペ（エージェントを提出して対戦させる型。Lux AI / ConnectX / Halite など）の場合は、上記に加えて以下も確認する**（固定 train/test が無いぶん、環境とI/F契約の把握が要）:
+- **エンジン / 環境**: `kaggle_environments` か独自エンジンか、ゲーム名（connectx / lux_ai_s3 など）、`make(...)` で再現できるか
+- **観測空間・行動空間**: `observation` に何が入るか、`configuration` の中身、合法手の集合と非合法手のペナルティ
+- **エピソード / ターン構造**: 1エピソードのターン数、同時手番か交互手番か、プレイヤー数
+- **レーティング方式**: TrueSkill / ELO 的なスコア付け、マッチング方式、1日あたりのマッチ数
+- **エージェント提出I/F**: `def agent(observation, configuration)` の戻り値（行動）形式、1手あたりのタイムアウト、メモリ制限、エージェントファイルサイズ上限
+
 ## フェーズ別ガード（いきなりアンサンブルしない）
 
 **コンペには段階がある。各フェーズの "やる/やらない" を分けないと、終盤の最適化を序盤に持ち込んでリソースを溶かす。**
@@ -42,6 +49,16 @@ Kaggle だけでなく、grand-challenge.org / CodaBench / 独自プラットフ
 | 終盤 | 70%- | **アンサンブル** / TTA / post-processing / 最終 submission 選定 / LB shake 評価 | 新アーキ着手, 大きな前処理変更, 新規外部データ |
 
 判定は**時間ベース + マイルストーンベースのハイブリッド**。`competition-strategist` agent (`/strategy` で起動) が自動で判定し、乖離があれば警告する（「中盤入っているのに baseline 1個だけ」など）。
+
+**Simulation コンペ版のフェーズ別ガード**（CV/アンサンブルの代わりに「対戦・相手プール・方策」で読み替える）:
+
+| フェーズ | 進捗 | やる | **絶対にやらない** |
+|---------|------|------|------------------|
+| 序盤 | ~30% | 動く提出パイプライン（1エピソード完走するエージェント）/ **ヒューリスティック baseline** / 環境とI/Fの把握 / ローカル評価ハーネス + 相手プール初版 | 序盤から RL を大回し, 探索の重い実装, 相手1種だけへの過学習 |
+| 中盤 | 30-70% | 探索（minimax/MCTS）・RL（self-play/PPO）強化 / **相手プールの多様化** / リプレイでの負け分析 | 相手1種だけで評価を回す, 評価ハーネス無しの体感チューニング |
+| 終盤 | 70%- | **方策アンサンブル**（相手別カウンター・状況別の使い分け）/ メタ変化への追従 / LB shake 評価 / 最終エージェント選定 | 新規アルゴリズム着手, 大きな観測/行動設計変更 |
+
+simulation には固定 CV が無いので、各フェーズの「進捗判定」は **相手プールに対する勝率の推移 + 提出レートの推移**で代理する。
 
 **新規セッション開始時の確認手順**: アクション提案前に必ず以下を確認:
 1. 今のフェーズはどこか（残り日数 + マイルストーン達成状況）
@@ -163,6 +180,12 @@ Kaggle だけでなく、grand-challenge.org / CodaBench / 独自プラットフ
 - config.yamlの `data.folds_csv` で使用バージョンを指定する
 - 設計意図・切り方の詳細は `workspace/fold/README.md` に記載
 
+**Simulation コンペには fold が無い:**
+- 固定の train/test も CV も存在しない。代わりに「**対戦相手プール（版管理）+ ローカル評価ハーネス**」を設計する
+- 固定の相手プールに対する**勝率を代理 CV** とする（同じ相手集合・同じシードで測り、版を上げたら旧版も残す）
+- 相手プールは弱い順（random / 単純ヒューリスティック / 過去の自分のエージェント / 強い公開エージェント）で多様化し、過学習を防ぐ
+- 詳細は `reference_sim/README.md` / `reference_sim/opponents/README.md` を参照
+
 ## 提出パイプライン（`submit/`）
 
 提出用コードとモデルは `submit/` 以下で管理する。提出形式はプラットフォームによって異なるため、以下のいずれかに沿って構成する。
@@ -265,6 +288,23 @@ submit/v001_baseline/
 - イメージサイズ・GPU 要件・推論時間制限を事前に把握し、必要ならモデル軽量化や ONNX 化を検討
 - gitには `Dockerfile` / `process.py` / スクリプト類のみコミット（`model/` と `test/` の大容量データは除外）
 
+### Simulation コンペの場合（エージェント提出型）
+
+**(D) Simulation エージェント提出型**（`def agent(observation, configuration)` を実装した1ファイルを提出し、サーバ上で他者エージェントと対戦させる）
+
+```
+submit/v001_expA00_heuristic/
+├── agent.py             # 提出するエージェント本体（self-contained な単一ファイル）
+├── run_local.sh         # ローカルで1エピソード完走 + 相手プールに対する勝率確認
+├── requirements.txt     # ローカル評価用（提出環境のプリインストール library に合わせる）
+└── model/               # 方策の weight 等（.gitignore。使う場合のみ）
+```
+
+- エントリポイントは `agent.py` の `def agent(observation, configuration)`。**self-contained**（`workspace/` や外部モジュールに依存せず1ファイルで完結。weight を使う場合も読み込みパスを環境判別で解決）
+- **ローカルで1エピソード完走を確認**してから提出する（`kaggle_environments` の `make(...)` / `env.run([agent, "random"])` を `reference_sim/evaluate.py` 経由で回す）
+- **タイムアウト・メモリ・不正手で落ちないか検証**する。1手あたりの応答時間を計測し制限内に収める / 合法手のみ返す / エージェント関数内で stdout に余計な print をしない（採点ログを汚す）
+- 命名規則は既存踏襲（`v00X_<元実験フォルダ名>[_追加識別子]`）。git には `agent.py` / スクリプト類のみコミット（`model/` は除外）
+
 ## エラー分析の原則（スコアの前に出力を見ろ）
 
 **スコアを上げようとする前に、まず出力を観察して「何が悪いか」を特定する。**
@@ -292,6 +332,7 @@ submit/v001_baseline/
 - `reference/` に2.5Dセグメンテーションのテンプレートコード（PyTorch Lightning + timm + smp）がある
 - 新しい実験のベースとして活用すること
 - 詳細は `reference/README.md` を参照
+- `reference_sim/` に **simulation コンペ用の参照**（エージェント I/F + 対戦評価ハーネス、ConnectX 実例）がある。エージェント提出型のコンペではこちらをベースにする。詳細は `reference_sim/README.md`
 
 ## 自動化（Hooks）
 
@@ -302,10 +343,10 @@ submit/v001_baseline/
 
 ## 利用可能なSkills
 
-- `/onboard [URL]` - コンペ開始時の7項目チェックリストを対話的に埋め、`survey/competition/overview.md` に保存。**新しいコンペに入ったら最初にこれ**
+- `/onboard [URL]` - コンペ開始時の7項目チェックリストを対話的に埋め、`survey/competition/overview.md` に保存。**新しいコンペに入ったら最初にこれ**（simulation コンペの追加項目にも対応）
 - `/exp-new <name> [--human]` - `reference/` から雛形コピーで新しい実験フォルダを作成し、`SESSION_NOTES.md` と `run.sh` を生成
 - `/daily-report` - 今日の `daily_reports/YYYYMMDD.md` を前日から引き継いで作成（セッション開始時）
-- `/submit-check <path>` - 提出物の事前検証（Kaggle CSV / 予測ファイル zip / Docker）。提出直前に必ず使う
+- `/submit-check <path>` - 提出物の事前検証（Kaggle CSV / 予測ファイル zip / Docker / Simulation エージェント）。提出直前に必ず使う
 - `/strategy [追加観点]` - 横断 synthesis を実行。`competition-strategist` agent が全 daily_report + SESSION_NOTES + claudeSummary を一括ロードして次の一手を出す。週1回や CV 頭打ち時
 - `/survey-papers [キーワード]` - 論文・解法調査（`context: fork` でメインコンテキストを汚さない）
 - `/wiki [add|find|promote|consolidate]` - コンペ知識を `knowledge/` ストック層（原子ページ + INDEX）に蓄積・検索・整理。daily_report のフローから蒸留して昇格。知見が出たとき・週次整理・過去知見を引きたいとき
@@ -318,7 +359,7 @@ submit/v001_baseline/
 |-------|-------|------|
 | **competition-strategist** | opus | 横断 synthesis（全 daily_report + SESSION_NOTES + claudeSummary + SUBMISSIONS を一括分析）。1M ctx を最大活用 |
 | **code-reviewer** | opus | ML/DLコード品質レビュー。リーク・指標バグ・チェックポイント破綻など、複数ファイル横断でしか見えない問題を検出 |
-| **submission-validator** | sonnet | 提出物の事前検証（CSV / 予測ファイル zip / Docker）。提出ミスを潰す |
+| **submission-validator** | sonnet | 提出物の事前検証（CSV / 予測ファイル zip / Docker / Simulation エージェント）。提出ミスを潰す |
 | **kaggle-researcher** | sonnet | 論文・類似コンペ解法・ディスカッション調査。Kaggle / grand-challenge.org / CodaBench など他プラットフォームも対応 |
 | **data-analyst** | sonnet | EDA・可視化・特徴量分析。データの全体像把握 |
 

@@ -327,6 +327,22 @@ Phase detection is **hybrid: time-based + milestone-based**:
 - [ ] LB shake scenarios evaluated (optimistic + pessimistic)
 - [ ] `/submit-check` passes for every intended submission
 
+### Phase Guidance for Simulation Competitions (agent-submission type)
+
+Simulation competitions (Lux AI / ConnectX / Halite etc.) have no fixed train/test and no CV. "Validation" is literally playing matches against opponents. Re-read each phase as "raise win-rate against the opponent pool + raise submission rating" instead of "raise CV".
+
+- **Early (~30%)**:
+  - **do**: a working submission pipeline (an agent that completes one episode) / a heuristic baseline / understanding the environment and I/F / a local evaluation harness + the first opponent-pool version
+  - **don't**: spin up heavy RL early / dive into expensive search implementations / overfit to a single opponent
+- **Mid (30-70%)**:
+  - **do**: strengthen search (minimax/MCTS) or RL (self-play/PPO) / diversify the opponent pool / analyze losses from replays (inductively classify which positions you lose in)
+  - **don't**: evaluate against only one opponent / tune by feel without an evaluation harness
+- **Late (70%-)**:
+  - **do**: policy ensembling (opponent-specific counters, situation-specific switching) / track meta shifts / evaluate LB shake / select the final agent
+  - **don't**: start a new algorithm / make large observation/action redesigns
+
+Judge progress with "the trend of win-rate against a fixed opponent pool + the trend of submission rating" instead of CV. See the simulation version of "Phase Guard" in CLAUDE.md for details.
+
 ### Phase Misalignment Warnings
 
 When time and milestones diverge, the `competition-strategist` agent warns:
@@ -373,3 +389,4 @@ How you split folds determines CV reliability. **If CV isn't reliable, every exp
 
 - Recording single model scores before ensembling helps understand each model's contribution. Ensembling is "combining the best models," not "mixing everything"
 - Pre-submission checks seem obvious, but wasting time on submission errors from row count mismatches or column name typos is avoidable. Always check after modifying post-processing
+- In simulation competitions, "ensemble" means not averaging predictions but **mixing policies / switching by opponent** (selecting among multiple policies or search depths depending on the position or the opponent). The same rule applies: measure each single policy's win-rate before combining

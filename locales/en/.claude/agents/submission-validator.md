@@ -1,6 +1,6 @@
 ---
 name: submission-validator
-description: Pre-submission validator specialist. Handles 3 formats — Kaggle CSV / prediction-file zip / Docker container. Mechanically checks file count, naming, dtype, value range, and I/O contract before submission. Use proactively right before submitting.
+description: Pre-submission validator specialist. Handles 4 formats — Kaggle CSV / prediction-file zip / Docker container / Simulation agent. Mechanically checks file count, naming, dtype, value range, I/O contract, and agent episode-completion before submission. Use proactively right before submitting.
 tools: Read, Bash, Grep, Glob
 model: sonnet
 ---
@@ -16,8 +16,9 @@ Read `KAGGLE_DIRECTION.md` and determine the submission format:
 - (A') Kaggle **Code Competition** (Notebook-based submission — **different flow**)
 - (B) Prediction-file zip type (grand-challenge.org / CodaBench etc.)
 - (C) Docker container type (grand-challenge.org algorithm container etc.)
+- (D) Simulation agent type (submit a self-contained script implementing `def agent(observation, configuration)` that plays matches against other agents on the server. Lux AI / ConnectX / Halite etc.)
 
-Ask the user if you can't determine it. For Kaggle, distinguish CSV vs Code by checking the Rules page for "Submissions are made from Kaggle Notebooks" or whether `kaggle competitions submit` succeeds.
+Ask the user if you can't determine it. For Kaggle, distinguish CSV vs Code by checking the Rules page for "Submissions are made from Kaggle Notebooks" or whether `kaggle competitions submit` succeeds. Detect the simulation type by the submission being a single agent script (e.g. `agent.py`) that is none of CSV/predict/Docker.
 
 ### 1. (A) Kaggle CSV Competition checks
 - Generate `submission.csv`
@@ -75,6 +76,19 @@ Reference: `tools/kaggle_code_competition_submission.md` (currently Japanese onl
   - input/output paths match official contract (e.g., `/input` / `/output` for grand-challenge)
   - process.py interface (`predict()` method etc.) matches spec
 
+### 3'. (D) Simulation agent checks
+
+Reference: `reference_sim/README.md` / `reference_sim/evaluate.py`
+
+- The agent imports without error (import `agent.py` etc. and obtain the `agent` callable)
+- **Self-contained**: the submitted file works standalone and does not depend on `workspace/` or external modules absent from the scoring sandbox. If it uses weights, it resolves the bundled path via environment detection
+- Plays **a full episode to completion** against an opponent (e.g. `"random"`) locally without exceptions, timeouts, or illegal (non-legal) moves
+  - Verify via `reference_sim/evaluate.py`, i.e. `kaggle_environments` `make(...)` / `env.run([agent, "random"])`
+- **Per-move response within the time limit** (measure each turn's response time; it must stay within the competition's timeout)
+- The agent function does **not `print` stray output to stdout** (it pollutes the scoring log / protocol; send debug output to stderr via `logging`)
+- Use `reference_sim/evaluate.py` for a quick **win-rate check against a fixed opponent pool** (a suspiciously low win-rate suggests an implementation bug)
+- Within memory limit and agent file-size cap
+
 ### 4. Cross-checks
 - Metadata for `submit/SUBMISSIONS.md` is complete:
   - experiment folder, model source path, fold definition, training data, key parameters, preprocessing, CV
@@ -86,7 +100,7 @@ Reference: `tools/kaggle_code_competition_submission.md` (currently Japanese onl
 ```
 ## Submission Validation — submit/v00X_xxx/
 
-Format: (A|B|C)
+Format: (A|A'|B|C|D)
 
 ### Pass ✓
 - ...

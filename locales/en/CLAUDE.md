@@ -31,6 +31,13 @@ When starting a new competition, don't jump into training code. First fill in th
 
 Do not start implementation until all 7 items are filled in.
 
+**For Simulation competitions (submit an agent that plays matches — Lux AI / ConnectX / Halite etc.), also confirm the following** (with no fixed train/test, grasping the environment and the I/F contract is essential):
+- **Engine / environment**: `kaggle_environments` or a custom engine, game name (connectx / lux_ai_s3 etc.), whether `make(...)` reproduces it
+- **Observation / action space**: what is in `observation`, the contents of `configuration`, the set of legal moves and the penalty for illegal moves
+- **Episode / turn structure**: turns per episode, simultaneous vs alternating turns, number of players
+- **Rating system**: TrueSkill / ELO-like scoring, matchmaking, matches per day
+- **Agent submission I/F**: the return (action) format of `def agent(observation, configuration)`, per-move timeout, memory limit, agent file-size cap
+
 ## Phase Guard (Don't Jump to Ensemble)
 
 **Competitions have phases. If you don't separate "do/don't" per phase, you'll waste resources by bringing late-stage optimization into early stages.**
@@ -42,6 +49,16 @@ Do not start implementation until all 7 items are filled in.
 | Late | 70%- | **Ensemble** / TTA / post-processing / final submission selection / LB shake evaluation | New architecture, large preprocessing changes, new external data |
 
 Phase detection is **hybrid: time-based + milestone-based**. The `competition-strategist` agent (invoked via `/strategy`) auto-detects the phase and warns on divergence (e.g., "Entered mid phase but only 1 baseline exists").
+
+**Simulation-competition phase guard** (re-read CV/ensemble as "matches / opponent pool / policies"):
+
+| Phase | Progress | Do | **Never Do** |
+|-------|----------|-----|--------------|
+| Early | ~30% | a working submission pipeline (an agent that completes one episode) / a **heuristic baseline** / understanding the environment and I/F / a local evaluation harness + the first opponent pool | spin up heavy RL early, expensive search implementations, overfitting to a single opponent |
+| Mid | 30-70% | strengthen search (minimax/MCTS) / RL (self-play/PPO) / **diversify the opponent pool** / analyze losses from replays | evaluating against only one opponent, tuning by feel without an evaluation harness |
+| Late | 70%- | **policy ensembling** (opponent-specific counters, situation-specific switching) / track meta shifts / LB shake evaluation / select the final agent | starting a new algorithm, large observation/action redesigns |
+
+Since simulation has no fixed CV, judge each phase's progress with **the trend of win-rate against the opponent pool + the trend of submission rating**.
 
 **Session start checklist**: Before proposing any action:
 1. What phase are we in? (days remaining + milestone status)
@@ -163,6 +180,12 @@ To avoid local optima, bold ideas should be "nobody would normally do that" leve
 - Specify version in config.yaml via `data.folds_csv`
 - Document design intent and split details in `workspace/fold/README.md`
 
+**Simulation competitions have no folds:**
+- There is no fixed train/test and no CV. Instead, design an "**opponent pool (versioned) + local evaluation harness**"
+- Use **win-rate against the fixed opponent pool as a proxy CV** (measure with the same opponent set and the same seed; keep old versions when you bump the pool)
+- Diversify the opponent pool from weak to strong (random / simple heuristic / your past agents / strong public agents) to prevent overfitting
+- See `reference_sim/README.md` / `reference_sim/opponents/README.md` for details
+
 ## Submission Pipeline (`submit/`)
 
 Submission code and models are managed under `submit/`. Submission formats differ by platform, so follow one of the layouts below.
@@ -265,6 +288,23 @@ submit/v001_baseline/
 - Know the image size / GPU requirements / inference time limits in advance; consider model lightening or ONNX conversion if needed
 - Only commit `Dockerfile` / `process.py` / scripts to git (exclude large data in `model/` and `test/`)
 
+### For Simulation competitions (agent-submission type)
+
+**(D) Simulation agent type** (submit a single file implementing `def agent(observation, configuration)` that plays against other agents on the server)
+
+```
+submit/v001_expA00_heuristic/
+├── agent.py             # the submitted agent (a self-contained single file)
+├── run_local.sh         # run one full episode locally + check win-rate vs the opponent pool
+├── requirements.txt     # for local evaluation (match the submission env's preinstalled libraries)
+└── model/               # policy weights etc. (.gitignore; only if used)
+```
+
+- The entry point is `def agent(observation, configuration)` in `agent.py`. **Self-contained** (complete in one file without depending on `workspace/` or external modules; if weights are used, resolve the load path via environment detection)
+- **Confirm one full episode completes locally** before submitting (run `kaggle_environments` `make(...)` / `env.run([agent, "random"])` via `reference_sim/evaluate.py`)
+- **Verify it does not die from timeout / memory / illegal moves**: measure per-move response time and keep it within the limit / return only legal moves / never `print` stray output to stdout inside the agent function (it pollutes the scoring log)
+- Follow the existing naming convention (`v00X_<source-exp-folder>[_extra-id]`). Commit only `agent.py` / scripts to git (exclude `model/`)
+
 ## Error Analysis Principles (Look at Outputs Before Scores)
 
 **Before trying to improve scores, first observe outputs to identify "what's wrong."**
@@ -292,6 +332,7 @@ Order: Read outputs → Identify what's wrong → Address the cause → Verify w
 - `reference/` contains a template for 2.5D segmentation (PyTorch Lightning + timm + smp)
 - Use as a base for new experiments
 - See `reference/README.md` for details (currently Japanese only)
+- `reference_sim/` contains a **reference for simulation competitions** (agent I/F + match-evaluation harness, with ConnectX as the worked example). Use it as the base for agent-submission competitions. See `reference_sim/README.md`
 
 ## Automation (Hooks)
 
@@ -302,10 +343,10 @@ Order: Read outputs → Identify what's wrong → Address the cause → Verify w
 
 ## Available Skills
 
-- `/onboard [URL]` - Walk through the 7-item competition onboarding checklist and save to `survey/competition/overview.md`. **Use first when starting a new competition**
+- `/onboard [URL]` - Walk through the 7-item competition onboarding checklist and save to `survey/competition/overview.md`. **Use first when starting a new competition** (also covers the extra items for simulation competitions)
 - `/exp-new <name> [--human]` - Scaffold a new experiment folder from `reference/` with auto-generated `SESSION_NOTES.md` and `run.sh`
 - `/daily-report` - Create today's `daily_reports/YYYYMMDD.md` carrying over from yesterday's (use at session start)
-- `/submit-check <path>` - Pre-submission validation (Kaggle CSV / prediction zip / Docker). Use right before any submission
+- `/submit-check <path>` - Pre-submission validation (Kaggle CSV / prediction zip / Docker / Simulation agent). Use right before any submission
 - `/strategy [focus]` - Cross-experiment synthesis. The `competition-strategist` agent loads all daily reports + SESSION_NOTES + claudeSummary in parallel and proposes next moves. Use weekly or when CV plateaus
 - `/survey-papers [keyword]` - Paper/solution survey (runs in `context: fork` without polluting main context)
 - `/wiki [add|find|promote|consolidate]` - Accumulate / search / consolidate competition knowledge in the `knowledge/` stock layer (atomic pages + INDEX). Distill and promote from the daily-report flow. Use when an insight emerges, for weekly cleanup, or to recall past knowledge
@@ -318,7 +359,7 @@ Automatically delegates to subagents as needed. Parallel execution supported.
 |-------|-------|---------|
 | **competition-strategist** | opus | Cross-experiment synthesis (loads all daily reports + SESSION_NOTES + claudeSummary + SUBMISSIONS in parallel). Maximum use of 1M context |
 | **code-reviewer** | opus | ML/DL code quality review. Catches issues only visible across multiple files: leakage, metric bugs, broken checkpoints |
-| **submission-validator** | sonnet | Pre-submission validation (CSV / prediction zip / Docker). Eliminates submission errors |
+| **submission-validator** | sonnet | Pre-submission validation (CSV / prediction zip / Docker / Simulation agent). Eliminates submission errors |
 | **kaggle-researcher** | sonnet | Paper, similar competition solution, and discussion research. Covers non-Kaggle platforms (grand-challenge.org / CodaBench) too |
 | **data-analyst** | sonnet | EDA, visualization, feature analysis. For understanding overall data picture |
 

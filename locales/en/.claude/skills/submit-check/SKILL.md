@@ -1,6 +1,6 @@
 ---
 name: submit-check
-description: Run pre-submission validation. Handles 4 formats — Kaggle CSV / Kaggle Code Competition / prediction-file zip / Docker container. Delegates to the submission-validator agent for mechanical checks. Use right before any submission.
+description: Run pre-submission validation. Handles 5 formats — Kaggle CSV / Kaggle Code Competition / prediction-file zip / Docker container / Simulation agent. Delegates to the submission-validator agent for mechanical checks. Use right before any submission.
 argument-hint: "<path to submit/v00X_<source-exp>_xxx> [--platform kaggle|gc|codabench]"
 ---
 
@@ -18,11 +18,13 @@ argument-hint: "<path to submit/v00X_<source-exp>_xxx> [--platform kaggle|gc|cod
      - `kernel-metadata.json` + `dataset-metadata.json` present → (A') Kaggle Code Competition
      - `predict.py` + `run.sh` present → (B) Prediction-file zip
      - `Dockerfile` + `process.py` present → (C) Docker container
+     - `agent.py` / `main.py` / `submit_agent.py` (or similar agent entry) present and none of the above → (D) Simulation agent
 
 3. **Invoke submission-validator agent**:
    - Pass the detected format and submission folder path
    - Agent handles format-specific validation automatically
    - For (A'), have submission-validator run "1'. Kaggle Code Competition checks" (kernel-metadata / dataset-metadata / self-contained notebook validation)
+   - For (D), have submission-validator run "3'. (D) Simulation agent checks" (self-contained / full-episode completion / timeout, illegal-move, stray-print validation)
 
 4. **Aggregate results and report**:
    - Show Pass / Fail / Warning in that order

@@ -1,6 +1,6 @@
 ---
 name: submission-validator
-description: 提出物の事前検証専門エージェント。Kaggle CSV / 予測ファイル zip / Docker コンテナの3形式に対応。提出前にファイル数・命名・dtype・値域・I/O契約を機械的にチェックする。提出直前にproactiveに使う。
+description: 提出物の事前検証専門エージェント。Kaggle CSV / 予測ファイル zip / Docker コンテナ / Simulation エージェントの4形式に対応。提出前にファイル数・命名・dtype・値域・I/O契約・エージェント完走性を機械的にチェックする。提出直前にproactiveに使う。
 tools: Read, Bash, Grep, Glob
 model: sonnet
 ---
@@ -16,8 +16,9 @@ model: sonnet
 - (A') Kaggle **Code Competition** 型（Notebook 経由提出。**フローは別物**）
 - (B) 予測ファイル zip 型（grand-challenge.org / CodaBench など）
 - (C) Docker コンテナ型（grand-challenge.org の algorithm container など）
+- (D) Simulation エージェント提出型（`def agent(observation, configuration)` を実装した self-contained スクリプトを提出し、サーバ上で他者エージェントと対戦。Lux AI / ConnectX / Halite など）
 
-判定できなければユーザーに確認する。Kaggle の場合、CSV か Code かは Rules ページの "Submissions are made from Kaggle Notebooks" の有無 / `kaggle competitions submit` が通るかで切り分け。
+判定できなければユーザーに確認する。Kaggle の場合、CSV か Code かは Rules ページの "Submissions are made from Kaggle Notebooks" の有無 / `kaggle competitions submit` が通るかで切り分け。simulation 型は提出物が `agent.py` 等の単一エージェントスクリプト（CSV/predict/Docker のいずれでもない）であることで判定する。
 
 ### 1. (A) Kaggle CSV Competition 型のチェック
 - `submission.csv` を生成
@@ -75,6 +76,19 @@ model: sonnet
   - 入力パス・出力パスが公式契約に一致（grand-challenge なら `/input` / `/output`）
   - process.py の interface 実装（`predict()` メソッド等）が仕様準拠
 
+### 3'. (D) Simulation エージェント型のチェック
+
+参考: `reference_sim/README.md` / `reference_sim/evaluate.py`
+
+- エージェントが import エラー無くロードできる（`agent.py` 等を import して `agent` callable が取れる）
+- **self-contained**: 提出ファイル単体で完結し、`workspace/` や外部モジュール（提出環境に無いもの）に依存しない。weight を使う場合も同梱パスを環境判別で解決している
+- ローカルで相手（例: `"random"`）に対し **1エピソードを最後まで完走**し、例外・タイムアウト・不正手（非合法手）で落ちない
+  - `kaggle_environments` の `make(...)` / `env.run([agent, "random"])` を `reference_sim/evaluate.py` 経由で実行して確認
+- **1手あたりの応答が制限時間内**（各ターンの応答時間を計測し、コンペのタイムアウト以内に収まっているか）
+- エージェント関数内で **stdout に余計な `print` をしていない**（採点ログ・通信を汚す。デバッグ出力は `logging` で stderr へ）
+- `reference_sim/evaluate.py` を使い、固定相手プールに対する**勝率での簡易確認**を行う（極端に低い勝率なら実装バグの疑い）
+- メモリ制限・エージェントファイルサイズ上限を超えていないか
+
 ### 4. 横断チェック
 - `submit/SUBMISSIONS.md` に記録される予定のメタ情報が揃っているか
   - 実験フォルダ・モデル元パス・fold 定義・学習データ・主要パラメータ・前処理・CV
@@ -86,7 +100,7 @@ model: sonnet
 ```
 ## 提出検証結果 — submit/v00X_xxx/
 
-形式: (A|B|C)
+形式: (A|A'|B|C|D)
 
 ### Pass ✓
 - ...
