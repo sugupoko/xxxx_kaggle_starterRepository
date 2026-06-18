@@ -1,0 +1,4 @@
+# Reference template dependencies (simulation competitions / ConnectX)
+# Major-version range pins; tighten per competition if reproducibility matters.
+kaggle-environments>=1.14,<2
+numpy>=1.24,<3
