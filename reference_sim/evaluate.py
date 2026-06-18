@@ -49,11 +49,23 @@ from typing import Callable, Dict, List, Tuple
 
 HERE = Path(__file__).resolve().parent
 
+# --- Engine config (CHANGE THESE THREE TO PORT TO ANOTHER GAME) ------------
+# This harness is engine-agnostic *except* for the block below and the agents
+# in agents/ (board logic is necessarily per-game). To port to Lux AI / Halite /
+# Kore / …: set ENGINE to the kaggle_environments game name, list that engine's
+# built-in opponent agents, and check N_PLAYERS — the match loop (play_pair)
+# assumes a 2-player, alternating-first game; adjust it for >2 players.
+ENGINE = "connectx"
+BUILTIN_OPPONENTS = ("random", "negamax")     # kaggle_environments built-ins for ENGINE
+N_PLAYERS = 2                                  # play_pair assumes exactly 2 (see its docstring)
+
+LOCAL_OPPONENTS = ("heuristic", "frozen_v1")  # agents defined in this repo
+ALLOWED_OPPONENTS = BUILTIN_OPPONENTS + LOCAL_OPPONENTS
+
 # --- Defaults (override via CLI) -------------------------------------------
 DEFAULT_GAMES = 20
 DEFAULT_SEED = 0
 DEFAULT_DEPTH = 4
-ALLOWED_OPPONENTS = ("random", "negamax", "heuristic", "frozen_v1")
 
 logger = logging.getLogger("reference_sim.evaluate")
 
@@ -122,7 +134,7 @@ def build_opponent(name: str):
     Built-ins ("random"/"negamax") are passed through as strings; our own
     agents are returned as callables.
     """
-    if name in ("random", "negamax"):
+    if name in BUILTIN_OPPONENTS:
         return name  # kaggle_environments built-in by name
     if name == "heuristic":
         from agents.heuristic import heuristic_agent
@@ -143,6 +155,10 @@ def play_pair(env, me, opp, seed: int) -> Tuple[int, int]:
 
     Each result is +1 win / 0 draw / -1 loss from *my* perspective. Uses the
     env's ``run`` so we can pass a per-game configuration seed.
+
+    NOTE (porting): this assumes a 2-player game (``N_PLAYERS == 2``). For a
+    free-for-all with more players, replace ``[me, opp]`` with the full agent
+    list and score from ``my_position`` accordingly.
     """
     # Game A: I move first.
     env.reset()
@@ -269,7 +285,7 @@ def main(argv=None) -> int:
         return 2
 
     me = build_my_agent(args.policy, args.depth)
-    env = make("connectx", debug=True)
+    env = make(ENGINE, debug=True)
 
     all_summaries = []
     for opp_name in opponents:

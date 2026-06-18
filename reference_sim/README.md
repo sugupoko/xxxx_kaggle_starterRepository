@@ -174,15 +174,21 @@ repo rules (which agent, depth, local win-rates vs each pool member).
 
 ## 7. Porting to other engines (Lux AI, Halite, Kore, …)
 
-The architecture is engine-agnostic. To move to another `kaggle_environments`
-game (or another simulator):
+The harness is engine-agnostic **except for two clearly-isolated places**: the
+agents in `agents/` (board logic is necessarily per-game) and a single
+**`ENGINE CONFIG` block** at the top of `evaluate.py`. To move to another
+`kaggle_environments` game (or another simulator):
 
 1. **Agent I/F** — reimplement the board helpers and `agent(obs, cfg)` for the
    new observation/action format in `agents/` (keep them pure + deterministic;
-   still never print/log inside the move function).
-2. **Evaluate** — change the environment name in `evaluate.py`
-   (`make("connectx")` → `make("<engine>")`); the match loop, alternating
-   sides, win-rate, Wilson bound, and logging are reusable.
+   still never print/log inside the move function). `evaluate.py` knows nothing
+   about board geometry, so nothing leaks out of `agents/`.
+2. **`ENGINE CONFIG` (the only engine-specific lines in `evaluate.py`)** — set
+   `ENGINE` to the game name (`"connectx"` → `"<engine>"`), list that engine's
+   `BUILTIN_OPPONENTS`, and check `N_PLAYERS`. The match loop, alternating
+   sides, win-rate, Wilson bound, seeded reproducibility, and logging are all
+   reusable as-is. **Caveat:** `play_pair` assumes a **2-player** game; for a
+   free-for-all (>2 players) adjust it per its docstring.
 3. **Opponent pool** — keep the frozen/versioned `opponents/` discipline.
 4. **Submit** — keep `submit_agent.py` self-contained for the new engine.
 
