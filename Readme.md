@@ -1,6 +1,6 @@
 # Competition Experiment Template
 
-**v2.7.0**
+**v2.7.1**
 
 > Supports **Kaggle** and **non-Kaggle** competitions (grand-challenge.org, CodaBench, custom platforms).
 > Designed for **Claude Opus (1M context)**.
@@ -339,6 +339,7 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v2.7.1 | 2026-06-18 | **Common rule: don't swallow errors.** Add an "Error-Handling Principles (Don't Swallow Errors)" section to CLAUDE.md — a careless `try/except` makes code "look like it works but is actually broken," hiding bugs; default to fail-fast, and catch only when recoverable + specific exception type + logged. `code-reviewer` agent gains a swallowed-exception check so the rule is enforced, not just stated. Synced across ja/en |
 | v2.7.0 | 2026-06-17 | **Simulation-competition support** (agent-vs-agent: Lux AI / ConnectX / Halite …). Add `reference_sim/` — a runnable reference (heuristic + alpha-beta search agents, a local match-evaluation harness with opponent-pool versioning as the "fold" analogue, a self-contained `submit_agent.py`, and a cwd-safe `run_local.sh` that auto-installs deps), worked on ConnectX via `kaggle_environments`. Extend the docs/skills/agents: onboarding gains simulation items (engine/observation/action/episode/rating/agent-I/F), a simulation phase guard (heuristic → search/RL → policy-ensemble), the fold section notes the opponent-pool analogue, a 4th submission track **(D) Simulation agent**, and `/submit-check` + `submission-validator` gain agent checks (self-contained / full-episode completion / timeout / illegal-move / stray-print). Synced across ja/en |
 | v2.6.1 | 2026-06-13 | **RunPod multi-pod / detached-run ops lessons** (from real practice): README §11 (1 pod = 1 launch — re-launching stacks processes → GPU contention SIGKILL; full detach via `setsid CMD >log 2>&1 </dev/null &`; verify startup with a separate ssh call; `while-read` loops eat ssh stdin; `pkill -f` self-matches its own cmdline), reconcile the Kaggle-zip trap in §9.5 (extract behavior is inconsistent → auto-detect the data root; add real-username owner-id, post-create 404 polling, and `HF_TOKEN` stall traps), add a generic `tools/runpod/pod_run.sh` per-job training entry (Kaggle fetch → auto-detected extraction → train → `/workspace/out_<TAG>`) |
 | v2.6.0 | 2026-06-10 | **Review-based overhaul**: restore the missing `reference/` config, add missing executable bits on scripts, harden the secret-blocking pre-commit hook, safer RunPod ops defaults, migrate the session hook from Stop to **SessionEnd** (`$CLAUDE_PROJECT_DIR`-based paths), add locale-sync CI under `.github/workflows/`, unify the competition overview under `survey/competition/`, document `workspace/fold/generate_folds.py`, and refresh the README (structure / requirements / first-session flow / License) |

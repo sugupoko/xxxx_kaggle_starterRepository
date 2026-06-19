@@ -305,6 +305,18 @@ submit/v001_expA00_heuristic/
 - **Verify it does not die from timeout / memory / illegal moves**: measure per-move response time and keep it within the limit / return only legal moves / never `print` stray output to stdout inside the agent function (it pollutes the scoring log)
 - Follow the existing naming convention (`v00X_<source-exp-folder>[_extra-id]`). Commit only `agent.py` / scripts to git (exclude `model/`)
 
+## Error-Handling Principles (Don't Swallow Errors)
+
+**Why this rule exists**: a careless `try/except` creates code that "looks like it works but is actually broken." Swallowing an exception does **not make the error go away — it only makes it invisible**, and a wrong result (NaN, empty array, stale data, a default value) flows silently downstream, delaying by hours the diagnosis of a broken CV/LB. So the default is **fail-fast (let exceptions propagate so you notice early)**.
+
+- **Forbidden**: `except:` / `except Exception: pass` / catching an exception and returning a default / None / empty. That **hides** the bug instead of **fixing** it
+- Use `try/except` only when **all** of these hold:
+  1. the failure is **recoverable** (a retryable transient error, an optional feature being absent, …)
+  2. you catch a **specific exception type** (e.g. `except requests.Timeout`); avoid a broad `except Exception`
+  3. you don't swallow it — **log it via `logging`** and either retry with a cap or fall back explicitly
+- Mismatches in data / shape / preprocessing / metric / submission format should **not be caught — let them crash** (an early `assert` is safer). "Just wrap it in except to make it run" is the worst move: it carries the bug to production
+- OK: a transient network failure in a monitoring loop → handle it with "specific type + log + retry cap" (`tools/kaggle_elapsed_time.py`). NG: swallowing a `KeyError` / `shape` mismatch → hides the bug
+
 ## Error Analysis Principles (Look at Outputs Before Scores)
 
 **Before trying to improve scores, first observe outputs to identify "what's wrong."**

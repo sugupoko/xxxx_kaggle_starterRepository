@@ -24,6 +24,7 @@ Leakage, metric bugs, and broken checkpoints are classic patterns that inflate C
 - **Metric implementation scrutiny**: Diff between sklearn defaults and competition spec (average='macro' vs 'micro', threshold, background class exclusion, per-class vs per-sample)
 - **Loss vs metric mismatch**: e.g., BCE training + F1 evaluation needs threshold optimization
 - **Seed fixing gaps**: `pl.seed_everything(seed, workers=True)`, individual numpy/torch/random seeds, DataLoader generator
+- **Swallowed exceptions**: does `except: pass` / a broad `except Exception` eat the error and let NaN / empty / a default flow downstream? The classic "looks like it works but is actually broken" that hides bugs (see CLAUDE.md "Error-Handling Principles (Don't Swallow Errors)"). Catching is acceptable only when "recoverable + specific exception type + logged"
 
 ### 2. PyTorch Lightning Best Practices
 - `training_step` / `validation_step` return (loss only vs dict)

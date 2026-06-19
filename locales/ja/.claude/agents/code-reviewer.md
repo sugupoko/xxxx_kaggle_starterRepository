@@ -24,6 +24,7 @@ model: opus
 - **指標実装の精査**: sklearn デフォルトとコンペ仕様の差分（average='macro' vs 'micro'、threshold、背景クラス除外、per-class vs per-sample）
 - **Loss と評価指標の不一致**: BCE で学習し F1 で評価する場合の閾値最適化漏れなど
 - **シード固定の漏れ**: `pl.seed_everything(seed, workers=True)`、numpy/torch/random の個別固定、DataLoader の generator
+- **例外の握りつぶし**: `except: pass` / 広い `except Exception` で例外を飲み込み、NaN・空・デフォルト値を下流に流していないか。「動いて見えて実は壊れている」を作りバグを隠す典型（CLAUDE.md「エラーハンドリングの原則（握りつぶさない）」参照）。捕まえてよいのは「回復可能 + 具体的な例外型 + logging 記録」を満たすときだけ
 
 ### 2. PyTorch Lightning ベストプラクティス
 - `training_step` / `validation_step` の戻り値（loss だけ vs dict）
