@@ -25,6 +25,7 @@ knowledge/
   data/             # データの性質・リーク・fold設計の知見
   error/            # エラーパターンとその対処
   decision/         # 方針判断とその理由（なぜそれを選んだ/捨てたか）
+  ledgers/          # run・データ版・実験フォルダ・★索引の一覧台帳（wiki ページではない。AGENTS.md §実験管理の正本）
 ```
 
 カテゴリは増やしてよい（例: `metric/`, `pipeline/`）。増やしたら INDEX に節を足す。

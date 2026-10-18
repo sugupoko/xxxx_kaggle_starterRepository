@@ -4,6 +4,25 @@ This repository is an experiment management template for data science competitio
 It supports **Kaggle and non-Kaggle platforms** (grand-challenge.org, CodaBench, custom sites).
 **When in doubt, check the design intent in `KAGGLE_DIRECTION.md`.** (The filename is historical — the content is a general-purpose design guide.)
 
+> ⚠️ **When multiple agents (Claude + other bots) and humans work in the same shared folder, read `AGENTS.md` before starting work.** (`AGENTS.md` is currently Japanese only.)
+> Key points: (1) write only to folders with your own prefix (2) `datasets/` `reference/` `workspace/fold/vNNN/` are read-only
+> (3) daily reports are split per author; git commits and Kaggle submissions each have exactly one owner (lanes) (4) announce before touching anything outside your area
+> (5) the default form of parallelism is **independent recomputation of the same artifact**, not splitting work. Accept the other agent's numbers only with the 4 elements (observation conditions / inference state / adoption gate / resume conditions)
+> Even with a single agent, rules 7–12 of `AGENTS.md` (submission etiquette, independent recomputation, blinding, the 4 elements of a claim) still apply.
+
+## 🔑 Handling keys and secrets (strict, top priority)
+
+When handling API keys / tokens (RunPod API key, GitHub PAT, HuggingFace, Kaggle key, LLM API keys, etc.), **always** follow these rules. There was a past incident where misuse of `${VAR:-...}` printed an API key into the chat and it had to be rotated.
+
+- **Never print raw values**: no key values in chat, logs or commits. Check existence with **boolean + length + first few chars only** (e.g. `[ -n "$VAR" ] && echo "set (${#VAR} chars, ${VAR:0:3}***)"`)
+- **Never use value-revealing syntax** on keys: `echo $VAR` / `${VAR:-...}` (prints the value unless unset) / `cat` on a key file
+- **Storage**: locally **only** in `*.env` files (e.g. `.runpod.env`, gitignored). Pass secrets to remote machines (pods etc.) via the platform's secret references (for RunPod, `{{ RUNPOD_SECRET_x }}`), never as raw values
+- **Using an SSH private key temporarily** (only when the user allows it): copy the key to a temp location on ext4 → `chmod 600` → use it for ssh/scp → **delete it immediately after use**. Use `-F /dev/null` to bypass a broken `~/.ssh/config` (on WSL, `~/.ssh` on a 9p mount stays at mode 777 and ssh rejects it, hence the temp copy)
+- **Operations that incur charges** (pod create, etc.) require **user confirmation beforehand**
+- **Commit prevention**: `kaggle.json` / `*.key` / `*.pem` / `*.env` are gitignored. Check with `git check-ignore` before pushing
+- **If leaked, rotate immediately**: if a value is ever exposed, prompt the user to revoke → reissue → replace it in the `*.env` file
+- RunPod-specific operations (temporary SSH key workflow, key guard) are in `tools/runpod/README.md`
+
 ## Meta-rule: Designed for Opus (1M context)
 
 This template is designed to run on **Claude Opus (1M context)**. To leverage that, **don't hold back** on the following:
@@ -88,6 +107,7 @@ To avoid local optima, bold ideas should be "nobody would normally do that" leve
 - Claude: `expA00_baseline` (letter + 2-digit number), Human: `exp200_name` (3-digit number)
 - Every experiment folder must have a `SESSION_NOTES.md`
 - Only increment exp numbers for major direction changes. Minor tweaks stay in the same folder
+- To avoid moving the goalposts after seeing results, **freeze the decision band before looking at the numbers** for comparison experiments (pre-register with `templates/PREREG_TEMPLATE.md`, Japanese only; template list in `templates/README.md`)
 - All results, insights, and strategy go in daily reports `daily_reports/YYYYMMDD.md` (no separate plan files)
 
 ## Training Code Rules
@@ -350,8 +370,8 @@ Order: Read outputs → Identify what's wrong → Address the cause → Verify w
 
 `.claude/settings.json` ships with these hooks. Inspect/edit via `/hooks`:
 
-- **SessionStart**: Auto-inject the latest daily report (newest match of `daily_reports/[0-9]*.md`) and `knowledge/INDEX.md` (the knowledge index) into context. Ensures you never skip status check or lose track of where stock knowledge lives
-- **SessionEnd**: When the session ends, append a `<!-- session ended: ... -->` marker to today's daily report (if it exists). Keeps a daily activity log (uses SessionEnd, not Stop — Stop fires on every completed response)
+- **SessionStart**: Auto-inject the latest daily report (the `daily_reports/YYYYMMDD.md` with the newest date — only date-named files are considered, so that in multi-agent setups another agent's `YYYYMMDD_B.md` is never loaded by mistake; other agents' same-day reports are listed by name only. Agent B reads its own reports with the env var `DAILY_REPORT_SUFFIX=_B`) and `knowledge/INDEX.md` (the knowledge index) into context. Ensures you never skip status check or lose track of where stock knowledge lives
+- **SessionEnd**: When the session ends, append a `<!-- session ended: ... -->` marker to today's daily report (if it exists). Keeps a daily activity log (uses SessionEnd, not Stop — Stop fires on every completed response). "Today" is determined as **UTC + `REPORT_TZ_OFFSET_HOURS` (default 9 = JST)** (containers run on a UTC clock and `TZ=Asia/Tokyo` has no effect without zoneinfo, which made it append to the previous day's report between 00:00 and 09:00 JST)
 
 ## Available Skills
 
@@ -361,6 +381,7 @@ Order: Read outputs → Identify what's wrong → Address the cause → Verify w
 - `/submit-check <path>` - Pre-submission validation (Kaggle CSV / prediction zip / Docker / Simulation agent). Use right before any submission
 - `/strategy [focus]` - Cross-experiment synthesis. The `competition-strategist` agent loads all daily reports + SESSION_NOTES + claudeSummary in parallel and proposes next moves. Use weekly or when CV plateaus
 - `/survey-papers [keyword]` - Paper/solution survey (runs in `context: fork` without polluting main context)
+- `/probing [metric]` - Leaderboard probing. Diagnoses which probing is possible from the problem setup (value / structural / confusion-matrix / ID) before running it safely. Requires checking the submission quota and rules. Row-level probing is off by default
 - `/wiki [add|find|promote|consolidate]` - Accumulate / search / consolidate competition knowledge in the `knowledge/` stock layer (atomic pages + INDEX). Distill and promote from the daily-report flow. Use when an insight emerges, for weekly cleanup, or to recall past knowledge
 
 ## Custom Agents

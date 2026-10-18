@@ -34,7 +34,12 @@ echo "[create] name=$POD_NAME gpu='$GPU' stop-after=${STOP_AT:-none}  (★課金
 # ★公式テンプレ必須（bare --image だと常駐プロセスが無く即EXITEDになる。GUIはテンプレ使用）
 ARGS=(pod create --name "$POD_NAME" --gpu-id "$GPU" --cloud-type SECURE
       --template-id "${TEMPLATE_ID:-runpod-torch-v280}" --container-disk-in-gb 20)
-[ -n "$STOP_AT" ] && ARGS+=(--stop-after "$STOP_AT")
+# 🔴 runpodctl 2.14.0 で --stop-after / --terminate-after が削除された。無い版に渡すと create が落ちるので確かめてから付ける
+if $RPCTL pod create --help 2>&1 | grep -q -- '--stop-after'; then
+  [ -n "$STOP_AT" ] && ARGS+=(--stop-after "$STOP_AT")
+else
+  echo "[warn] この runpodctl には --stop-after が無い。teardown を必ず自分で実行すること"
+fi
 # ★create 出力から pod ID を即確保（EXITED になると `pod list` に出ず「課金中なのに ID 不明」になる）
 CREATE_OUT="$($RPCTL "${ARGS[@]}" 2>&1)" || { echo "$CREATE_OUT"; echo "[FATAL] pod create 失敗"; exit 1; }
 echo "$CREATE_OUT"

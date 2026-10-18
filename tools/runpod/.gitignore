@@ -1,0 +1,10 @@
+# RunPod ツールの実行時 state（環境ごとに変わる・共有しない）
+# rp_credit_watch.sh の前回値
+.rp_credit_watch.json
+# rp_key_guard.sh の排他ロックと in-flight 登録
+.rp_key.lock
+.rp_inflight/
+# 一時 SSH 鍵は既定で /tmp（リポジトリ外）。RP_SSH_KEY でここに置いた場合の保険
+.rp_ephemeral_key
+.rp_ephemeral_key.pub
+.rp_known_hosts

@@ -1,0 +1,1180 @@
+diff --git a/docs/en/usage.md b/docs/en/usage.md
+index 5633c50..1590efd 100644
+--- a/docs/en/usage.md
++++ b/docs/en/usage.md
+@@ -589,6 +589,12 @@ The bot's own ID is always excluded (infinite-loop prevention). Messages from al
+ 
+ Consecutive replies to the same bot are capped at `RESPOND_TO_BOTS_MAX_CONSECUTIVE` (default 3). The counter resets when a human or a different bot posts. This is a safety net against runaway bot-to-bot loops.
+ 
++For bot messages, only a **real mention in the message body** (`<@BotID>`) keeps the conversation going. A Discord reply carries a mention of the replied-to user (`replied_user`) even without one in the body; for bots that signal is ignored on both the receiving and the sending side, so a reply saying "let's stop here" no longer re-ignites the exchange. The reply form itself stays usable.
++
++Human messages are unchanged: a plain reply to the bot still triggers it, and xangi's replies still ping you (`replied_user`). `repliedUser: false` applies **only when replying to a bot**. Body mentions are resolved with `parse: ['users']`; `@everyone` / `@here` / role mentions are never resolved.
++
++For bot messages the check also looks at the **raw body text**, not just the `message.mentions` Discord resolved. If the peer bot's send path has no mention-resolution option, `<@BotID>` in the body arrives with an empty `message.mentions` and the conversation silently stalls (the client still renders it as a mention pill, which makes it hard to spot). This text fallback applies to bot messages only, and it preserves both invariants: a bare reply never wakes the bot, and dropping the mention always stops the exchange. Side effect: **a bot quoting another bot's ID in `<@...>` form will wake that bot**, so avoid that form when discussing IDs.
++
+ `/respondtobots` toggles the feature ON/OFF dynamically and persists to `.env`. To disable this command, set `ALLOW_RESPOND_TO_BOTS_COMMAND=false` in `.env` (default: enabled).
+ 
+ Use case: run multiple xangi instances (e.g. xangi-prod=Claude / xangi-dev=Local LLM) in the same channel and compare their responses to the same prompt side-by-side.
+@@ -1205,6 +1211,8 @@ Prefetch runs only when no provider session ID exists. Continuing turns use the
+ | `DISCORD_COMPLETION_NOTIFY`          | Send a separate completion notification after long Discord turns (`off` / `message` / `mention`)                   | `message`    |
+ | `DISCORD_COMPLETION_NOTIFY_AFTER_MS` | Minimum elapsed time before sending a completion notification (ms)                                                 | `10000`      |
+ | `ALLOW_AUTOREPLY_COMMAND`            | Enable `/autoreply` command                                                                                        | `true`       |
++| `DISCORD_PROCESSING_REACTION`        | Reaction shown from mention until the reply completes (empty string disables it)                                   | `🍓`         |
++| `DISCORD_EVERYONE_REPLY`             | Also send a full reply when woken only by `@everyone` / `@here`                                                    | `false`      |
+ | `XANGI_SELF_LIFECYCLE`               | Allow xangi to request its own restart (`off` / `restart-only`)                                                    | `off`        |
+ | `RESPOND_TO_BOTS`                    | Whitelist of bot IDs to respond to (`*` for all bots)                                                              | -            |
+ | `RESPOND_TO_BOTS_ENABLED`            | Toggle bot-to-bot reply ON/OFF (`/respondtobots` switches at runtime)                                              | `false`      |
+diff --git a/docs/usage.md b/docs/usage.md
+index ed53178..944a111 100644
+--- a/docs/usage.md
++++ b/docs/usage.md
+@@ -607,6 +607,12 @@ RESPOND_TO_BOTS_MAX_CONSECUTIVE=3
+ 
+ 同じ bot との連続応答は `RESPOND_TO_BOTS_MAX_CONSECUTIVE` 回（default 3）で打ち切られます。別 bot や人間のメッセージが入ると連鎖カウンタはリセットされます。bot 同士の無限往復を防ぐ安全装置です。
+ 
++bot 発言に対しては、**本文中の実メンション `<@BotID>` だけ**が会話継続のスイッチです。Discord の「返信」は本文にメンションが無くても返信先ユーザーへのメンション（`replied_user`）を含みますが、bot 相手のときは受信・送信の両方でこれを無視します（「もう止めるね」と書いた返信で会話が再点火するのを防ぐため）。返信形式そのものは自由に使えます。
++
++人間の発言は従来どおりです。bot への返信だけでも xangi は反応しますし、xangi からの返信通知（`replied_user`）も飛びます。`repliedUser: false` になるのは **bot への返信のときだけ**です。なお本文中のメンションは `parse: ['users']` で解決されますが、`@everyone` / `@here` / ロールメンションは誤爆防止のため解決しません。
++
++bot 発言の判定では、Discord が解決した `message.mentions` に加えて**本文の文字列そのもの**も見ます。相手 bot の送信経路が `allowed_mentions` にメンション解決オプションを持たない場合、本文に `<@BotID>` と書いても `message.mentions` は空で届き、会話が成立しなくなるためです（表示は青いメンションのままなので気付きにくい）。この文字列判定は bot 発言にのみ適用され、「返信しただけでは起動しない」「メンションを外せば止まる」性質は変わりません。副作用として、**bot が会話の中で自分以外の bot の ID を `<@...>` 形式で引用すると相手が起動します**。ID を話題にするときはこの形式を避けてください。
++
+ `/respondtobots` で機能の ON/OFF を動的に切替でき、`.env` にも永続化されます。コマンドを無効化するには `ALLOW_RESPOND_TO_BOTS_COMMAND=false` を設定してください（デフォルト: 有効）。
+ 
+ ユースケース: 複数の xangi インスタンス（例: xangi-prod=Claude / xangi-dev=Local LLM）を同じチャンネルに常駐させて、同じプロンプトに対する応答を並べて品質比較する。
+@@ -1229,6 +1235,8 @@ AIエージェント（CLI spawn / Local LLM exec）に渡す環境変数は `sr
+ | `DISCORD_COMPLETION_NOTIFY`          | 一定時間以上かかった Discord ターン完了時に別メッセージで通知（`off` / `message` / `mention`） | `message`  |
+ | `DISCORD_COMPLETION_NOTIFY_AFTER_MS` | 完了通知を出す最短経過時間（ms）                                                               | `10000`    |
+ | `ALLOW_AUTOREPLY_COMMAND`            | `/autoreply` コマンドの有効化                                                                  | `true`     |
++| `DISCORD_PROCESSING_REACTION`        | メンション受信〜応答完了まで付ける処理中リアクション（空文字で無効）                           | `🍓`       |
++| `DISCORD_EVERYONE_REPLY`             | `@everyone` / `@here` だけで呼ばれたときに本文応答もするか                                     | `false`    |
+ | `XANGI_SELF_LIFECYCLE`               | xangi自身による再起動の許可（`off` / `restart-only`）                                          | `off`      |
+ | `RESPOND_TO_BOTS`                    | 反応対象 bot ID のホワイトリスト（`*` で全 bot）                                               | -          |
+ | `RESPOND_TO_BOTS_ENABLED`            | bot メッセージ応答機能の ON/OFF（`/respondtobots` で動的切替）                                 | `false`    |
+diff --git a/src/backend-models.ts b/src/backend-models.ts
+index a4de529..e0c2043 100644
+--- a/src/backend-models.ts
++++ b/src/backend-models.ts
+@@ -224,12 +224,29 @@ export async function discoverBackendModels(
+   const runner = options.runner ?? runCommand;
+   try {
+     if (backend === 'claude-code') {
++      // Claude Code CLI has no machine-readable model list, but `claude --model <id>`
++      // accepts both aliases ('fable', 'opus', 'sonnet') and full names
++      // ('claude-fable-5-1'). Let the operator declare the usable IDs in
++      // CLAUDE_CODE_MODELS so `models --use` can validate against them.
++      // Model IDs are intentionally NOT hardcoded here: they change over time,
++      // and a stale hardcoded list would silently lie. When the env var is unset
++      // the behaviour is byte-identical to before.
++      const declared = configuredClaudeCodeModels();
++      if (declared) {
++        return {
++          backend,
++          source: '.env CLAUDE_CODE_MODELS',
++          status: 'available',
++          models: declared.map((id) => ({ id })),
++        };
++      }
+       return {
+         backend,
+         source: 'Claude Code CLI',
+         status: 'unsupported',
+         models: [],
+-        message: 'CLIに機械可読なモデル一覧取得機能がありません',
++        message:
++          'CLIに機械可読なモデル一覧取得機能がありません（.env の CLAUDE_CODE_MODELS で宣言できます）',
+       };
+     }
+     if (backend === 'local-llm') {
+@@ -327,6 +344,18 @@ export function formatBackendModels(
+   return lines.join('\n');
+ }
+ 
++export function configuredClaudeCodeModels(
++  env: NodeJS.ProcessEnv = process.env
++): string[] | undefined {
++  const raw = env.CLAUDE_CODE_MODELS;
++  if (!raw) return undefined;
++  const models = raw
++    .split(',')
++    .map((model) => model.trim())
++    .filter(Boolean);
++  return models.length > 0 ? models : undefined;
++}
++
+ export function configuredAllowedModels(
+   env: NodeJS.ProcessEnv = process.env
+ ): string[] | undefined {
+diff --git a/src/cli/discord-api.ts b/src/cli/discord-api.ts
+index 022d05f..0752d4c 100644
+--- a/src/cli/discord-api.ts
++++ b/src/cli/discord-api.ts
+@@ -257,6 +257,14 @@ async function discordSend(
+   if (!channelId) throw new ValidationError('--channel is required');
+   if (!message) throw new ValidationError('--message is required');
+ 
++  // 既定では本文中の `<@id>` を「文字列としては残すが通知はしない」= 事故防止のため抑止する。
++  // --mention を付けたときだけ user メンションを実際に解決する
++  // (bot 同士の会話では、相手の MessageCreate 時点で mentions が解決されていないと
++  //  メンション必須チャンネルで弾かれてしまうため、明示的に有効化できるようにする)。
++  // @everyone / @here / role は誤爆の影響が大きいので --mention でも解禁しない。
++  const enableMention = flags['mention'] !== undefined && flags['mention'] !== 'false';
++  const allowedMentions = enableMention ? { parse: ['users'] } : { parse: [] };
++
+   // 2000文字制限に合わせて分割送信
+   const chunks: string[] = [];
+   for (let i = 0; i < message.length; i += MAX_MESSAGE_LENGTH) {
+@@ -270,14 +278,14 @@ async function discordSend(
+         method: 'POST',
+         body: JSON.stringify({
+           content: chunk,
+-          allowed_mentions: { parse: [] },
++          allowed_mentions: allowedMentions,
+         }),
+       },
+       tracker
+     );
+   }
+ 
+-  return `✅ メッセージを送信しました (${chunks.length} chunk(s))`;
++  return `✅ メッセージを送信しました (${chunks.length} chunk(s)${enableMention ? ', mention有効' : ''})`;
+ }
+ 
+ async function discordChannels(
+diff --git a/src/cli/xangi-cmd-help.ts b/src/cli/xangi-cmd-help.ts
+index 8e7661a..3046d4b 100644
+--- a/src/cli/xangi-cmd-help.ts
++++ b/src/cli/xangi-cmd-help.ts
+@@ -26,7 +26,12 @@ export const XANGI_CMD_HELP_ENTRIES: XangiCmdHelpEntry[] = [
+     name: 'discord_send',
+     topic: 'discord',
+     summary: '別チャンネルへメッセージを送信',
+-    usage: 'xangi-cmd discord_send --channel <id> --message <text>',
++    usage: 'xangi-cmd discord_send --channel <id> --message <text> [--mention true]',
++    notes: [
++      '既定では <@id> は文字列として表示されるだけで実メンションにならない。bot を呼び出すときは --mention true を付ける。',
++      'フラグは --key value 形式。値なしの --mention と書くと次の --message を値として食ってしまうので必ず true を付ける。',
++      '--mention true でも @everyone / @here / role メンションは解禁されない（user メンションのみ）。',
++    ],
+   },
+   {
+     name: 'discord_channels',
+diff --git a/src/config.ts b/src/config.ts
+index 6c50867..d6e126b 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -57,6 +57,20 @@ export interface Config {
+     replySuggestions?: boolean;
+     replySuggestionCount?: number;
+     allowAutoreplyCommand?: boolean;
++    /**
++     * メンションを受けて処理中であることを示すリアクション (default: 🍓)。
++     * 処理開始時に付け、完了時に外す。空文字でリアクションしない。
++     * bot ごとに変えると、誰が反応したのかが一目で分かる
++     * (例: Agent A=🍓 / Agent B=🐾)。通常メンションと `@everyone` の両方に効く。
++     */
++    processingReaction?: string;
++    /**
++     * `@everyone` / `@here` だけで呼ばれたときに本文応答まで行うか (default: false)。
++     * 既定では {@link everyoneReaction} を付けるだけで agent は起動しない。
++     * ブロードキャストのたびに全 bot が長文を書くと騒がしいため。
++     * 直接メンション・DM・autoreply チャンネルはこの設定に関係なく従来どおり応答する。
++     */
++    everyoneReply?: boolean;
+     /**
+      * 反応する他 bot の ID ホワイトリスト (設定値、事前に env で指定)。
+      * - 空配列 (default) = 他 bot のメッセージには反応しない
+@@ -77,6 +91,21 @@ export interface Config {
+      * 別 bot や人間のメッセージが入ったら連鎖はリセットされる。
+      */
+     respondToBotsMaxConsecutive?: number;
++    /**
++     * 【第2層】同一チャンネルで bot に応答してから次の bot 応答までのクールダウン (ms, default: 8000)。
++     * 第1層と違い人間の発言ではリセットされない。0 以下で無効。
++     */
++    respondToBotsCooldownMs?: number;
++    /**
++     * 【第3層】bot 応答数をカウントする時間窓 (ms, default: 60000)。
++     * `respondToBotsMaxPerWindow` と組で使う最終防波堤。0 以下で無効。
++     */
++    respondToBotsWindowMs?: number;
++    /**
++     * 【第3層】`respondToBotsWindowMs` あたりの bot 応答数の上限 (default: 6)。
++     * 人間の相槌で無限に燃料補給されるのを防ぐため、リセットしない。0 以下で無効。
++     */
++    respondToBotsMaxPerWindow?: number;
+     /** /respondtobots slash command を有効化するか (default: true) */
+     allowRespondToBotsCommand?: boolean;
+     /** /threadmode slash command を有効化するか (default: true) */
+@@ -368,12 +397,18 @@ export function loadConfig(): Config {
+       replySuggestions: process.env.DISCORD_REPLY_SUGGESTIONS === 'true',
+       replySuggestionCount: v.int('DISCORD_REPLY_SUGGESTIONS_COUNT', 3, { min: 1, max: 5 }),
+       allowAutoreplyCommand: process.env.ALLOW_AUTOREPLY_COMMAND !== 'false', // デフォルトON
++      // 未設定なら 🍓。明示的に空文字を渡したときだけリアクションを止める
++      processingReaction: process.env.DISCORD_PROCESSING_REACTION ?? '🍓',
++      everyoneReply: process.env.DISCORD_EVERYONE_REPLY === 'true', // デフォルトOFF (リアクションのみ)
+       respondToBots:
+         process.env.RESPOND_TO_BOTS?.split(',')
+           .map((s) => s.trim())
+           .filter(Boolean) || [],
+       respondToBotsEnabled: process.env.RESPOND_TO_BOTS_ENABLED === 'true', // デフォルトOFF
+       respondToBotsMaxConsecutive: v.int('RESPOND_TO_BOTS_MAX_CONSECUTIVE', 3), // デフォルト3回、0以下は制限無効
++      respondToBotsCooldownMs: v.int('RESPOND_TO_BOTS_COOLDOWN_MS', 8_000, { min: 0 }), // 【第2層】
++      respondToBotsWindowMs: v.int('RESPOND_TO_BOTS_WINDOW_MS', 60_000, { min: 0 }), // 【第3層】
++      respondToBotsMaxPerWindow: v.int('RESPOND_TO_BOTS_MAX_PER_WINDOW', 6, { min: 0 }), // 【第3層】
+       allowRespondToBotsCommand: process.env.ALLOW_RESPOND_TO_BOTS_COMMAND !== 'false', // デフォルトON
+       allowThreadModeCommand: process.env.ALLOW_THREAD_MODE_COMMAND !== 'false', // デフォルトON
+       allowLlmModeCommand: process.env.ALLOW_LLM_MODE_COMMAND !== 'false', // デフォルトON
+diff --git a/src/discord/message-handler.ts b/src/discord/message-handler.ts
+index 0b33718..0fe77a7 100644
+--- a/src/discord/message-handler.ts
++++ b/src/discord/message-handler.ts
+@@ -5,6 +5,7 @@ import {
+   ActionRowBuilder,
+   ButtonBuilder,
+   ButtonInteraction,
++  type MessageReplyOptions,
+ } from 'discord.js';
+ import type { Config } from '../config.js';
+ import type { AgentRunner } from '../agent-runner.js';
+@@ -17,7 +18,13 @@ import { threadIdFor, turnIdFor } from '../events-emitter.js';
+ import { downloadFile, buildAttachmentResult, buildPromptWithAttachments } from '../file-utils.js';
+ import { splitMessage } from '../message-split.js';
+ import { DISCORD_MAX_LENGTH, DISCORD_SAFE_LENGTH } from '../constants.js';
+-import { StreamSession } from '../stream-session.js';
++import {
++  StreamSession,
++  DEFAULT_SPINNER_FRAMES,
++  DEFAULT_STATUS_VERBS,
++  STREAMING_CURSOR,
++  STREAMING_CURSOR_SUFFIX,
++} from '../stream-session.js';
+ import { registerStreamFinalizer } from '../stream-finalizer.js';
+ import { buildCompletionNotification } from './completion-notify.js';
+ import {
+@@ -85,6 +92,12 @@ export function shouldProcessDiscordMessage(input: { system?: boolean }): boolea
+   return !input.system;
+ }
+ 
++/**
++ * メンション受信時に付ける処理中リアクションの既定値。
++ * bot ごとに `DISCORD_PROCESSING_REACTION` で変える (例: Agent A=🍓 / Agent B=🐾)。
++ */
++export const DEFAULT_PROCESSING_REACTION = '🍓';
++
+ export interface DiscordMessageTarget {
+   conversationChannelId: string;
+   settingsChannelId: string;
+@@ -95,7 +108,7 @@ export interface DiscordMessageTarget {
+   outputChannel: {
+     send: (options: unknown) => Promise<Message>;
+   };
+-  sendInitial: (options: Parameters<Message['reply']>[0]) => Promise<Message>;
++  sendInitial: (options: MessageReplyOptions) => Promise<Message>;
+ }
+ 
+ async function resolveDiscordMessageTarget(
+@@ -170,8 +183,12 @@ async function resolveDiscordMessageTarget(
+     parentChannelName,
+     isThread,
+     outputChannel,
+-    sendInitial: (options: Parameters<Message['reply']>[0]) =>
+-      newThread ? newThread.send(options) : message.reply(options),
++    // 返信通知 (replied_user) は相手が人間のときだけ飛ばす。
++    // スレッド側は返信ではなく通常投稿なので、そもそも replied_user は発生しない。
++    sendInitial: (options: MessageReplyOptions) =>
++      newThread
++        ? newThread.send(options)
++        : message.reply({ ...options, allowedMentions: replyAllowedMentions(message) }),
+   };
+ }
+ 
+@@ -222,7 +239,9 @@ export async function processPrompt(
+     console.log(
+       `[xangi] Processing message in channel ${channelId}, runKey ${conversationChannelId}`
+     );
+-    if (actor?.react !== false) await message.react('👀').catch(() => {});
++    const processingReaction = config.discord.processingReaction ?? DEFAULT_PROCESSING_REACTION;
++    if (actor?.react !== false && processingReaction)
++      await message.react(processingReaction).catch(() => {});
+ 
+     const useStreaming = config.discord.streaming ?? true;
+     const showThinking = config.discord.showThinking ?? true;
+@@ -260,10 +279,11 @@ export async function processPrompt(
+         const content =
+           view.phase === 'thinking'
+             ? `${view.toolLines.length > 0 ? `${view.toolLines.join('\n')}\n\n` : ''}${view.statusLine}`
+-            : appendToolHistory(stripReplySuggestionMarkup(view.text), view.toolLines, ' ▌').slice(
+-                0,
+-                DISCORD_MAX_LENGTH
+-              );
++            : appendToolHistory(
++                stripReplySuggestionMarkup(view.text),
++                view.toolLines,
++                STREAMING_CURSOR_SUFFIX
++              ).slice(0, DISCORD_MAX_LENGTH);
+         const payload: { content: string; components?: ActionRowBuilder<ButtonBuilder>[] } = {
+           content,
+         };
+@@ -634,7 +654,9 @@ export async function processPrompt(
+     if (replyMessage) {
+       await replyMessage.edit({ content: errorMessage, components: [] }).catch(() => {});
+     } else {
+-      await message.reply(errorMessage).catch(() => {});
++      await message
++        .reply({ content: errorMessage, allowedMentions: replyAllowedMentions(message) })
++        .catch(() => {});
+     }
+ 
+     // エラー後にエージェントへ自動フォローアップ。
+@@ -676,13 +698,16 @@ export async function processPrompt(
+   } finally {
+     // 正常完了・エラー処理後は shutdown finalizer の対象から外す
+     unregisterStreamFinalizer?.();
+-    // 👀 リアクションを削除
+-    await message.reactions.cache
+-      .find((r) => r.emoji.name === '👀')
+-      ?.users.remove(message.client.user?.id)
+-      .catch((err) => {
+-        console.error('[xangi] Failed to remove 👀 reaction:', err.message || err);
+-      });
++    // 処理中リアクションを削除
++    const doneReaction = config.discord.processingReaction ?? DEFAULT_PROCESSING_REACTION;
++    if (doneReaction) {
++      await message.reactions.cache
++        .find((r) => r.emoji.name === doneReaction)
++        ?.users.remove(message.client.user?.id)
++        .catch((err) => {
++          console.error(`[xangi] Failed to remove ${doneReaction} reaction:`, err.message || err);
++        });
++    }
+   }
+ }
+ 
+@@ -754,6 +779,173 @@ export interface DiscordRemoteInputBridge {
+  * - MessageCreate: メンション / DM / チャンネル別メンションなし応答設定のメッセージを processPrompt に流す
+  * - MessageUpdate / MessageDelete: ユーザ操作を transcript jsonl に同期する
+  */
++/**
++ * 相手 bot の「途中経過メッセージ」かどうかを判別する。
++ *
++ * xangi 系 bot は本文が確定する前に `⠋ 考え中… 5s` を投稿し、あとから同じメッセージを
++ * edit して本文化する。この状態のメッセージに反応してしまうとスピナー文字列を
++ * プロンプトとして受け取ってしまうため、本文が乗るまでは「まだ空」とみなす。
++ *
++ * 判定対象:
++ * - スピナー始まり (`⠋ 考え中… 5s` 等。StreamSession の表示形式に追従)
++ * - ストリーミング中の書きかけ本文 (末尾が {@link STREAMING_CURSOR})
++ * - 🔧 ツール実行行 / ✅ 完了通知
++ * - メンションだけ・空文字
++ */
++export function isEphemeralStatusMessage(rawContent: string): boolean {
++  // メンションを除いた実質本文で判定する (メンションのみの投稿は「空」扱い)
++  const text = (rawContent ?? '')
++    .replace(/<@[!&]?\d+>/g, '')
++    .replace(/\s+/g, ' ')
++    .trim();
++  if (!text) return true;
++
++  // ストリーミング中の本文は末尾にカーソルが付く。確定本文には付かないので
++  // 「書きかけの1文目」を確定と誤認してターンを起動するのを防げる。
++  // (DISCORD_STREAMING=true のときだけ現れる状態)
++  if (text.endsWith(STREAMING_CURSOR)) return true;
++
++  // `⠋ 考え中… 5s` 形式 (StreamSession.buildThinkingText と同じ組み立て)
++  const firstChar = [...text][0] ?? '';
++  if (DEFAULT_SPINNER_FRAMES.includes(firstChar)) return true;
++  // スピナーが欠けても「<ステータス語>… 12s」だけなら途中経過とみなす
++  if (DEFAULT_STATUS_VERBS.some((verb) => new RegExp(`^${verb}…?\\s*\\d+s$`).test(text))) {
++    return true;
++  }
++
++  // ツール実行行 / 完了通知は本文にはならないので、以降も待たずに捨てる
++  if (text.startsWith('🔧') || text.startsWith('✅')) return true;
++
++  return false;
++}
++
++/**
++ * 返信 (`message.reply`) を送るときの allowedMentions を決める。
++ *
++ * - 相手が bot → `repliedUser: false`。返信しただけでは相手のターンを起動させない。
++ *   会話を続ける意思は本文の `<@BotID>` で示す ({@link isMentioningSelf} と対になる規則)。
++ * - 相手が人間 → `repliedUser: true`。返信通知は素直に便利なので従来どおり残す。
++ *
++ * `parse: ['users']` は本文中の実メンションのみ解決する (@everyone / role は解決しない)。
++ */
++export function replyAllowedMentions(repliedTo: { author: { bot: boolean } }): {
++  parse: ['users'];
++  repliedUser: boolean;
++} {
++  return { parse: ['users'], repliedUser: !repliedTo.author.bot };
++}
++
++/** 本文の文字列として `<@id>` / `<@!id>` が書かれているか (Discord の解決状況は見ない) */
++export function hasTextMention(content: string, selfId: string): boolean {
++  return new RegExp(`<@!?${selfId}>`).test(content ?? '');
++}
++
++/**
++ * 「このメッセージは自分を呼んでいるか」を判定する。
++ *
++ * Discord の「返信」は、本文にメンションが無くても返信先ユーザーへのメンション
++ * (replied_user) を含む。相手が bot だとこれだけでターンが起動するため、
++ * 「もう止めるね」と書いた返信ですら会話を再点火してしまう (2026-08-06 の実例)。
++ * そこで bot 発言に対しては replied_user を無視し、**本文のメンション**
++ * (`<@BotID>`) だけを会話継続スイッチとして扱う。返信形式そのものは使ってよい。
++ *
++ * 人間の発言は従来どおり — bot への返信だけで反応できたほうが自然なので、
++ * replied_user も継続トリガとして残す。
++ *
++ * bot 発言では {@link hasTextMention} による本文の文字列判定も併用する。
++ * `MessageMentions#has` は `ignoreRepliedUser: true` のとき「本文を解析した結果」と
++ * 「Discord が解決した mentions」の**両方**に載っていることを要求するため、
++ * 送信側が `allowed_mentions` でメンションを解決していないと、本文に `<@BotID>` と
++ * 書いてあっても届かない (2026-08-06 #サーベイ で会話が停止した原因)。
++ * 相手 bot の送信経路がメンション解決に対応していなくても会話を成立させるため、
++ * 本文に書いてあれば継続スイッチとして認める。
++ * 「返信しただけでは起動しない」「メンションを外せば止まる」は維持される。
++ */
++export function isMentioningSelf<TUser>(
++  mentions: {
++    has: (
++      user: TUser,
++      options?: { ignoreRepliedUser?: boolean; ignoreEveryone?: boolean }
++    ) => boolean;
++  },
++  selfUser: TUser,
++  options: { fromBot: boolean; content?: string; selfId?: string }
++): boolean {
++  // ignoreEveryone: @everyone / @here は「自分宛て」に数えない。
++  // discord.js の has() は既定でこれを true 扱いにするため、指定しないと
++  // ブロードキャスト 1 回で全 bot が本文応答を始めてしまう。
++  // @everyone の扱いは isEveryoneBroadcast 側で決める。
++  if (mentions.has(selfUser, { ignoreRepliedUser: options.fromBot, ignoreEveryone: true }))
++    return true;
++  if (!options.fromBot || !options.selfId) return false;
++  return hasTextMention(options.content ?? '', options.selfId);
++}
++
++/**
++ * 「`@everyone` / `@here` のブロードキャストとして呼ばれたか」を判定する。
++ *
++ * 直接メンション (本文の `<@BotID>`) が併記されている場合は false を返す。
++ * その場合は名指しの依頼なので、ブロードキャスト用の軽い挨拶ではなく
++ * 通常どおり本文で応答するべきだから。
++ */
++export function isEveryoneBroadcast<TUser>(
++  mentions: {
++    everyone: boolean;
++    has: (
++      user: TUser,
++      options?: { ignoreRepliedUser?: boolean; ignoreEveryone?: boolean }
++    ) => boolean;
++  },
++  selfUser: TUser,
++  options: { fromBot: boolean; content?: string; selfId?: string }
++): boolean {
++  if (!mentions.everyone) return false;
++  return !isMentioningSelf(mentions, selfUser, options);
++}
++
++/** `🔧` / `✅` は edit で本文化されないため、待たずに打ち切る */
++function isNeverSettling(rawContent: string): boolean {
++  const text = (rawContent ?? '').trim();
++  return text.startsWith('🔧') || text.startsWith('✅');
++}
++
++const BOT_SETTLE_POLL_INTERVAL_MS = 2_000;
++const BOT_SETTLE_MAX_WAIT_MS = 40_000;
++
++/**
++ * 相手 bot のメッセージ本文が確定するまで待つ。
++ *
++ * MessageCreate 時点の内容は「⠋ 考え中… 0s」で、メンションもまだ乗っていない。
++ * ここで捨ててしまうと本文に永遠に反応できないため、edit で本文化されるまで
++ * ポーリングする (最大 {@link BOT_SETTLE_MAX_WAIT_MS})。
++ *
++ * @returns 本文が確定した Message (mentions も再解決済み)。応答すべきでない場合は null。
++ */
++async function waitForBotMessageSettled(message: Message): Promise<Message | null> {
++  let current = message;
++  if (isNeverSettling(current.content)) return null;
++  if (!isEphemeralStatusMessage(current.content)) return current; // 最初から一発投稿
++
++  const deadline = Date.now() + BOT_SETTLE_MAX_WAIT_MS;
++  while (Date.now() < deadline) {
++    await new Promise((resolve) => setTimeout(resolve, BOT_SETTLE_POLL_INTERVAL_MS));
++    try {
++      // force fetch。discord.js はキャッシュ済みインスタンスを _patch して返すため
++      // content も mentions も最新化される。
++      current = await current.fetch();
++    } catch {
++      return null; // 削除された / 取得権限が無い
++    }
++    if (isNeverSettling(current.content)) return null;
++    if (!isEphemeralStatusMessage(current.content)) return current;
++  }
++
++  console.log(
++    `[xangi] Bot message ${message.id} did not settle within ${BOT_SETTLE_MAX_WAIT_MS}ms, skipping`
++  );
++  return null;
++}
++
+ export function registerDiscordMessageHandlers(deps: MessageHandlerDeps): DiscordRemoteInputBridge {
+   const { client, config, agentRunner, workdir } = deps;
+ 
+@@ -766,6 +958,13 @@ export function registerDiscordMessageHandlers(deps: MessageHandlerDeps): Discor
+   // 別 bot や人間のメッセージが入ったらリセット。RESPOND_TO_BOTS_MAX_CONSECUTIVE で上限制御。
+   const consecutiveBotResponses = new Map<string, { lastBotId: string; count: number }>();
+ 
++  // 【第2層】チャンネル単位のクールダウン (channelId → 直近の bot 応答時刻)。
++  // 【第3層】チャンネル単位の時間窓内応答時刻リスト (channelId → timestamps)。
++  // 第1層と違い、どちらも人間の発言ではリセットしない。人間が相槌を打つたびに
++  // 連鎖カウンタが戻って無限に燃料補給されるのを防ぐ、最後の防波堤。
++  const lastBotResponseAt = new Map<string, number>();
++  const botResponseTimes = new Map<string, number[]>();
++
+   // Discord でユーザがメッセージを編集 → transcript jsonl にも反映する。
+   // 対象は active session の jsonl のみ。古いセッションの履歴は対象外
+   // (パフォーマンスとマルチセッション衝突回避のため、active のみ)。
+@@ -827,6 +1026,8 @@ export function registerDiscordMessageHandlers(deps: MessageHandlerDeps): Discor
+     }
+ 
+     let isFromAllowedBot = false;
++    // 相手 bot のストリーミング投稿を待って本文確定させた Message (通常は message と同一インスタンス)
++    let settledBotMessage: Message | null = null;
+     if (message.author.bot) {
+       // 自分自身のメッセージには絶対に反応しない (無限ループ防止)
+       if (message.author.id === client.user?.id) return;
+@@ -837,33 +1038,97 @@ export function registerDiscordMessageHandlers(deps: MessageHandlerDeps): Discor
+       const allowAll = allowedBots.includes('*');
+       const isAllowed = allowAll || allowedBots.includes(message.author.id);
+       if (!isAllowed) return;
+-      // 連続返信制限チェック (default 3 回、0 以下は無制限)
++
++      const channelId = message.channel.id;
++      const now = Date.now();
++
++      // 【第1層】同一 bot への連続返信上限 (default 3 回、0 以下は無制限)。人間の発言でリセット。
+       const maxConsec = config.discord.respondToBotsMaxConsecutive ?? 3;
+       if (maxConsec > 0) {
+-        const counter = consecutiveBotResponses.get(message.channel.id);
+-        if (counter && counter.lastBotId === message.author.id) {
+-          if (counter.count >= maxConsec) {
+-            console.log(
+-              `[xangi] Consecutive bot response limit reached (${maxConsec}) for bot ${message.author.id} in channel ${message.channel.id}, skipping`
+-            );
+-            return;
+-          }
+-          counter.count += 1;
+-        } else {
+-          consecutiveBotResponses.set(message.channel.id, {
+-            lastBotId: message.author.id,
+-            count: 1,
+-          });
++        const counter = consecutiveBotResponses.get(channelId);
++        if (counter && counter.lastBotId === message.author.id && counter.count >= maxConsec) {
++          console.log(
++            `[xangi] Consecutive bot response limit reached (${maxConsec}) for bot ${message.author.id} in channel ${channelId}, skipping`
++          );
++          return;
+         }
+       }
++
++      // 【第2層】チャンネル単位のクールダウン。人間の発言ではリセットしない。
++      const cooldownMs = config.discord.respondToBotsCooldownMs ?? 8_000;
++      if (cooldownMs > 0) {
++        const last = lastBotResponseAt.get(channelId);
++        if (last !== undefined && now - last < cooldownMs) {
++          console.log(
++            `[xangi] Bot response cooldown active (${cooldownMs}ms) in channel ${channelId}, skipping`
++          );
++          return;
++        }
++      }
++
++      // 【第3層】時間窓あたりの総 bot 応答数。リセットされない最終防波堤。
++      const windowMs = config.discord.respondToBotsWindowMs ?? 60_000;
++      const maxPerWindow = config.discord.respondToBotsMaxPerWindow ?? 6;
++      if (windowMs > 0 && maxPerWindow > 0) {
++        const recent = (botResponseTimes.get(channelId) ?? []).filter((t) => now - t < windowMs);
++        botResponseTimes.set(channelId, recent);
++        if (recent.length >= maxPerWindow) {
++          console.log(
++            `[xangi] Bot response window limit reached (${maxPerWindow}/${windowMs}ms) in channel ${channelId}, skipping`
++          );
++          return;
++        }
++      }
++
++      // 相手 bot は「⠋ 考え中… 5s」を先に投稿してから edit で本文化する。
++      // MessageCreate 時点ではメンションも乗っていないため、本文が確定するまで待つ。
++      // ここはメンション / 自動応答チャンネル判定より "前" に置く必要がある
++      // (後ろに置くと、自動応答 ON のチャンネルで途中経過に反応してしまう)。
++      settledBotMessage = await waitForBotMessageSettled(message);
++      if (!settledBotMessage) return;
++
+       // bot メッセージだが許可された相手 → 続行 (allowedUsers チェックはバイパス)
+       isFromAllowedBot = true;
+     } else {
+       // 人間のメッセージが入ったら、そのチャンネルの連鎖カウンタをリセット
++      // (第2層・第3層は意図的にリセットしない)
+       consecutiveBotResponses.delete(message.channel.id);
+     }
+ 
+-    const isMentioned = message.mentions.has(client.user!);
++    // bot 相手のときは edit 後の Message を見る (作成時点では mentions がまだ空)
++    const effectiveMessage = settledBotMessage ?? message;
++    const isMentioned = isMentioningSelf(effectiveMessage.mentions, client.user!, {
++      fromBot: message.author.bot,
++      content: effectiveMessage.content,
++      selfId: client.user!.id,
++    });
++    const isAuthorized =
++      isFromAllowedBot ||
++      !!config.discord.allowedUsers?.includes('*') ||
++      !!config.discord.allowedUsers?.includes(message.author.id);
++
++    // @everyone / @here のブロードキャスト。既定では「見たよ」のリアクションだけ返し、
++    // agent は起動しない (ブロードキャスト 1 回で全 bot が長文を書くのを避ける)。
++    // DISCORD_EVERYONE_REPLY=true で本文応答もするようになる。
++    const isEveryone =
++      isAuthorized &&
++      isEveryoneBroadcast(effectiveMessage.mentions, client.user!, {
++        fromBot: message.author.bot,
++        content: effectiveMessage.content,
++        selfId: client.user!.id,
++      });
++    const repliesToEveryone = isEveryone && (config.discord.everyoneReply ?? false);
++    // 本文応答しないときは、処理中リアクションが付かないまま終わってしまう。
++    // 同じ絵文字を「見たよ」の印として残す (応答するなら processPrompt 側に任せる)
++    if (isEveryone && !repliesToEveryone) {
++      const emoji = config.discord.processingReaction ?? DEFAULT_PROCESSING_REACTION;
++      if (emoji) {
++        await message.react(emoji).catch((err) => {
++          console.error(`[xangi] Failed to react ${emoji} to @everyone:`, err.message || err);
++        });
++      }
++    }
++
+     const isDM = !message.guild;
+     const settings = loadSettings();
+     // スレッドは親チャンネルとは別IDを持つため、autoreply 設定はそのままでは継承されない。
+@@ -878,18 +1143,29 @@ export function registerDiscordMessageHandlers(deps: MessageHandlerDeps): Discor
+       getChannelAutoReply(settings, message.channel.id, false) ||
+       (parentChannelId != null && getChannelAutoReply(settings, parentChannelId, false));
+ 
+-    if (!isMentioned && !isDM && !isAutoReplyChannel) return;
++    if (!isMentioned && !isDM && !isAutoReplyChannel && !repliesToEveryone) return;
++
++    // ここまで来た = 実際に応答する。3層防御のカウンタはこの時点で記録する。
++    // (前段で記録すると、自分宛でない bot 発言でクールダウンや時間窓を食い潰してしまう)
++    if (isFromAllowedBot) {
++      const channelId = message.channel.id;
++      const now = Date.now();
++      const counter = consecutiveBotResponses.get(channelId);
++      if (counter && counter.lastBotId === message.author.id) {
++        counter.count += 1;
++      } else {
++        consecutiveBotResponses.set(channelId, { lastBotId: message.author.id, count: 1 });
++      }
++      lastBotResponseAt.set(channelId, now);
++      botResponseTimes.set(channelId, [...(botResponseTimes.get(channelId) ?? []), now]);
++    }
+ 
+-    if (
+-      !isFromAllowedBot &&
+-      !config.discord.allowedUsers?.includes('*') &&
+-      !config.discord.allowedUsers?.includes(message.author.id)
+-    ) {
++    if (!isAuthorized) {
+       console.log(`[xangi] Unauthorized user: ${message.author.id} (${message.author.tag})`);
+       return;
+     }
+ 
+-    let prompt = message.content
++    let prompt = effectiveMessage.content
+       .replace(/<@[!&]?\d+>/g, '') // ユーザーメンションのみ削除（チャンネルメンションは残す）
+       .replace(/\s+/g, ' ')
+       .trim();
+diff --git a/src/index.ts b/src/index.ts
+index cec01d0..d27fcac 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -222,6 +222,16 @@ async function main() {
+       // 発火させたい (transcript 反映用)。partial を有効化して payload-only で
+       // 受け取り、必要に応じて fetch() する。
+       partials: [Partials.Message, Partials.Channel],
++      // 送信時のメンション既定値。
++      // - parse: ['users'] → 本文中の実メンションは通す (bot 同士の会話継続スイッチとして必要)。
++      //   @everyone / @here / role は誤爆の影響が大きいので既定では解決しない。
++      // - repliedUser は指定しない = Discord 側の既定 (false) が効き、「返信しただけ」では
++      //   相手を通知しない。discord.js の既定は true で、message.reply() が毎回
++      //   replied_user メンションを飛ばしていた。相手が bot だとそれだけでターンが起動し、
++      //   「止めるね」と書いた返信でも会話が終わらなくなる (bot 同士の無限ループの入口)。
++      //   人間への返信だけは通知を残したいので、返信元を見て明示的に付け直す
++      //   (message-handler.ts の replyAllowedMentions)。
++      allowedMentions: { parse: ['users'] },
+     });
+ 
+     // runner の timeout-* イベントを Discord メッセージ更新に紐付け
+diff --git a/src/safe-env.ts b/src/safe-env.ts
+index 1e2f87e..070243a 100644
+--- a/src/safe-env.ts
++++ b/src/safe-env.ts
+@@ -18,6 +18,9 @@ export const ALLOWED_ENV_KEYS = [
+   // Node.js
+   'NODE_ENV',
+   'NODE_PATH',
++  // Claude CLIの設定/認証ディレクトリ（パスのみ。シークレットではない）
++  // 落とすと子プロセスが $HOME/.claude を見に行き "Not logged in" になる
++  'CLAUDE_CONFIG_DIR',
+   // xangi動作用
+   'WORKSPACE_PATH',
+   'AGENT_BACKEND',
+diff --git a/src/scheduler.ts b/src/scheduler.ts
+index c2b74e7..7a2c3d1 100644
+--- a/src/scheduler.ts
++++ b/src/scheduler.ts
+@@ -14,6 +14,27 @@ import { isTransientNetworkError } from './errors.js';
+ /** 一時的なネットワークエラー時のリトライ待機時間 (ms)。テストから上書き可能 */
+ export const TRANSIENT_RETRY_DELAY_MS = process.env.VITEST ? 50 : 15_000;
+ 
++// ─── 壁時計ジャンプ対策 ───────────────────────────────────────────────
++// node-cron は setTimeout(= 単調時計) で寝て、起きた時の壁時計と予定時刻を比べる。
++// 遅刻が missedExecutionTolerance (既定 1 秒) を超えると **発火せず missed 扱いで捨てる**。
++// WSL2 のような VM 上では省電力でゲストが小刻みに凍り、そのぶん壁時計だけが前へ飛ぶ
++// (実測: 34 秒ごとに +1.8 秒 ≒ 5%)。寝ている時間が長いほど遅刻が積み上がるので、
++// 15 分間隔のレーンは毎回 50 秒遅刻 → **100% 捨てられて永久に沈黙する**
++// (2026-08-09 に実際に発生。定点観測 2 レーンが 2 日間 1 度も発火しなかった)。
++//
++// 対策は 2 段構え:
++//   1. 遅刻の許容量を 1 分に広げる。node-cron 側は `遅刻 < 次スロットまでの間隔` も
++//      同時に要求するので、広げても発火予定を追い越して二重に走ることはない。
++//   2. 発火まで間がある間は定期的に stop→start してタイマーを張り直す。1 回の睡眠が
++//      最長 150 秒に制限されるので、遅刻は数秒までしか積み上がらない。
++//      発火直前 (MIN_LEAD 未満) は張り直すとスロットを取りこぼすので触らない。
++/** node-cron の遅刻許容量 (ms) */
++const CRON_MISSED_EXECUTION_TOLERANCE_MS = 60_000;
++/** タイマーを張り直す間隔 (ms) */
++const CRON_REARM_INTERVAL_MS = 30_000;
++/** 次の発火までこれを切っていたら張り直さない (ms) */
++const CRON_REARM_MIN_LEAD_MS = 120_000;
++
+ /** スケジュール一覧の項目間区切り（splitMessage用） */
+ export const SCHEDULE_SEPARATOR = '{{SPLIT}}';
+ 
+@@ -62,6 +83,8 @@ export class Scheduler {
+   private lastReloadTime = 0;
+   private quiet: boolean;
+   private disabled = false;
++  /** cron タイマーを定期的に張り直すループ（壁時計ジャンプ対策） */
++  private rearmTimer?: ReturnType<typeof setInterval>;
+   /** 実行中ジョブの ID（再発火ガード用） */
+   private runningJobs = new Set<string>();
+   constructor(dataDir?: string, options?: { quiet?: boolean }) {
+@@ -263,6 +286,7 @@ export class Scheduler {
+    */
+   stopAll(): void {
+     this.stopWatching();
++    this.stopRearmLoop();
+     for (const [id] of this.cronJobs) {
+       this.stopJob(id);
+     }
+@@ -325,9 +349,13 @@ export class Scheduler {
+         () => {
+           this.executeJob(schedule);
+         },
+-        { timezone: 'Asia/Tokyo' }
++        {
++          timezone: 'Asia/Tokyo',
++          missedExecutionTolerance: CRON_MISSED_EXECUTION_TOLERANCE_MS,
++        }
+       );
+       this.cronJobs.set(schedule.id, task);
++      this.ensureRearmLoop();
+       this.log(
+         `[scheduler] Cron job started: ${schedule.id} (${schedule.expression}) → ${schedule.channelId}`
+       );
+@@ -357,6 +385,7 @@ export class Scheduler {
+     if (cronJob) {
+       cronJob.stop();
+       this.cronJobs.delete(id);
++      if (this.cronJobs.size === 0) this.stopRearmLoop();
+     }
+     const timer = this.timers.get(id);
+     if (timer) {
+@@ -364,6 +393,39 @@ export class Scheduler {
+       this.timers.delete(id);
+     }
+   }
++  /**
++   * cron タイマーの張り直しループを開始する（既に動いていれば何もしない）。
++   * 冒頭の「壁時計ジャンプ対策」コメント参照。
++   */
++  private ensureRearmLoop(): void {
++    if (this.rearmTimer) return;
++    this.rearmTimer = setInterval(() => this.rearmCronJobs(), CRON_REARM_INTERVAL_MS);
++    // cron ジョブ自身のタイマーがプロセスを生かすので、この監視だけで生かす必要はない
++    this.rearmTimer.unref?.();
++  }
++  private stopRearmLoop(): void {
++    if (!this.rearmTimer) return;
++    clearInterval(this.rearmTimer);
++    this.rearmTimer = undefined;
++  }
++  /**
++   * 発火まで十分に間がある cron ジョブのタイマーを張り直す。
++   * これで「1 回の睡眠」が短く保たれ、壁時計ジャンプによる遅刻が積み上がらない。
++   */
++  private rearmCronJobs(): void {
++    const now = Date.now();
++    for (const [id, task] of this.cronJobs) {
++      try {
++        const next = task.getNextRun();
++        // 発火直前に張り直すとそのスロットを取りこぼす。手を出さない
++        if (!next || next.getTime() - now <= CRON_REARM_MIN_LEAD_MS) continue;
++        task.stop();
++        task.start();
++      } catch (error) {
++        console.error(`[scheduler] Failed to re-arm cron job ${id}:`, error);
++      }
++    }
++  }
+   private async executeJob(schedule: Schedule): Promise<void> {
+     // 再発火ガード: 前回の実行がまだ走っている間に同じスケジュールの
+     // cron が発火した場合はスキップする（長時間ジョブの重複実行・多重投稿防止）
+diff --git a/src/slack.ts b/src/slack.ts
+index 2b8e7bd..a962cfa 100644
+--- a/src/slack.ts
++++ b/src/slack.ts
+@@ -14,7 +14,7 @@ import { threadIdFor, turnIdFor } from './events-emitter.js';
+ import { runWithBubbleEvents } from './bubble-events-runner.js';
+ import { getTurnHistory, readTurnHistory, type TurnHistoryEntry } from './activity-store.js';
+ import { prefetchSlackHistory } from './slack-history-prefetch.js';
+-import { StreamSession } from './stream-session.js';
++import { StreamSession, STREAMING_CURSOR_SUFFIX } from './stream-session.js';
+ import { registerStreamFinalizer } from './stream-finalizer.js';
+ import { formatAgentErrorForUser } from './errors.js';
+ import { markdownToSlackMrkdwn } from './slack-mrkdwn.js';
+@@ -1527,7 +1527,11 @@ export async function processMessage(
+             ? `${view.toolLines.length > 0 ? `${view.toolLines.join('\n')}\n\n` : ''}${view.statusLine}`
+             : sliceByBytes(
+                 markdownToSlackMrkdwn(
+-                  appendToolHistory(stripReplySuggestionMarkup(view.text), view.toolLines, ' ▌')
++                  appendToolHistory(
++                    stripReplySuggestionMarkup(view.text),
++                    view.toolLines,
++                    STREAMING_CURSOR_SUFFIX
++                  )
+                 ),
+                 SLACK_MAX_TEXT_BYTES
+               );
+diff --git a/src/stream-session.ts b/src/stream-session.ts
+index 6a3a76f..b90da3b 100644
+--- a/src/stream-session.ts
++++ b/src/stream-session.ts
+@@ -68,6 +68,16 @@ export function capToolLines(lines: string[], max = toolHistoryMaxLines()): stri
+ }
+ 
+ export const DEFAULT_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
++
++/**
++ * ストリーミング中の本文末尾に付けるカーソル記号。
++ *
++ * 確定後の本文には付かないため、相手 bot 側は「末尾がこれ = まだ書きかけ」と判別できる。
++ * 描画側 (`STREAMING_CURSOR_SUFFIX`) と判定側 (`isEphemeralStatusMessage`) で必ず共有すること。
++ */
++export const STREAMING_CURSOR = '▌';
++/** 本文に連結する形 (前の空白込み) */
++export const STREAMING_CURSOR_SUFFIX = ` ${STREAMING_CURSOR}`;
+ export const DEFAULT_STATUS_VERBS = [
+   '考え中',
+   '思考中',
+diff --git a/tests/config.test.ts b/tests/config.test.ts
+index 98e83e7..2812755 100644
+--- a/tests/config.test.ts
++++ b/tests/config.test.ts
+@@ -94,6 +94,25 @@ describe('config', () => {
+     expect(overridden.discord.replySuggestionCount).toBe(5);
+   });
+ 
++  it('defaults the Discord processing reaction to 🍓 and supports overrides', async () => {
++    // bot ごとに変えて「誰が反応したか」を見分ける (例: Agent A=🍓 / Agent B=🐾)
++    process.env.DISCORD_TOKEN = 'test-discord-token';
++    delete process.env.DISCORD_PROCESSING_REACTION;
++    delete process.env.DISCORD_EVERYONE_REPLY;
++
++    const { loadConfig } = await import('../src/config.js');
++    const defaults = loadConfig();
++    expect(defaults.discord.processingReaction).toBe('🍓');
++    expect(defaults.discord.everyoneReply).toBe(false);
++
++    process.env.DISCORD_PROCESSING_REACTION = '🐾';
++    expect(loadConfig().discord.processingReaction).toBe('🐾');
++
++    // 空文字は「未設定」ではなく「リアクションしない」。?? ではなく空文字が残ること
++    process.env.DISCORD_PROCESSING_REACTION = '';
++    expect(loadConfig().discord.processingReaction).toBe('');
++  });
++
+   it('disables Slack reply suggestions by default and supports overrides', async () => {
+     process.env.WEB_CHAT_ENABLED = 'true';
+     delete process.env.SLACK_REPLY_SUGGESTIONS;
+diff --git a/tests/discord-message-handler.test.ts b/tests/discord-message-handler.test.ts
+index cddbf9e..b183b6a 100644
+--- a/tests/discord-message-handler.test.ts
++++ b/tests/discord-message-handler.test.ts
+@@ -1,5 +1,12 @@
+ import { describe, expect, it } from 'vitest';
+-import { shouldProcessDiscordMessage } from '../src/discord/message-handler.js';
++import {
++  isEphemeralStatusMessage,
++  isEveryoneBroadcast,
++  isMentioningSelf,
++  replyAllowedMentions,
++  shouldProcessDiscordMessage,
++} from '../src/discord/message-handler.js';
++import { STREAMING_CURSOR, STREAMING_CURSOR_SUFFIX } from '../src/stream-session.js';
+ 
+ describe('shouldProcessDiscordMessage', () => {
+   it('processes normal messages', () => {
+@@ -10,3 +17,237 @@ describe('shouldProcessDiscordMessage', () => {
+     expect(shouldProcessDiscordMessage({ system: true })).toBe(false);
+   });
+ });
++
++describe('isEphemeralStatusMessage', () => {
++  it('treats an empty body as not yet settled', () => {
++    expect(isEphemeralStatusMessage('')).toBe(true);
++    expect(isEphemeralStatusMessage('   ')).toBe(true);
++  });
++
++  it('treats a mention-only body as not yet settled', () => {
++    // MessageCreate 時点ではメンションだけ乗って本文が空、というケース
++    expect(isEphemeralStatusMessage('<@999999999999999999>')).toBe(true);
++  });
++
++  it('detects the spinner + status verb format', () => {
++    expect(isEphemeralStatusMessage('⠋ 考え中… 0s')).toBe(true);
++    expect(isEphemeralStatusMessage('⠦ 組み立て中… 16s')).toBe(true);
++    expect(isEphemeralStatusMessage('⠏ 調査中… 9s')).toBe(true);
++  });
++
++  it('detects a status verb even when the spinner frame is missing', () => {
++    expect(isEphemeralStatusMessage('考え中… 5s')).toBe(true);
++    expect(isEphemeralStatusMessage('推敲中 12s')).toBe(true);
++  });
++
++  it('detects tool execution and completion lines', () => {
++    expect(isEphemeralStatusMessage('🔧 Bash実行: `npm run build`')).toBe(true);
++    expect(isEphemeralStatusMessage('✅ 完了しました')).toBe(true);
++  });
++
++  it('passes real replies through', () => {
++    expect(isEphemeralStatusMessage('届いたよ、Agent A。双方向の確認ができたね。')).toBe(false);
++    expect(isEphemeralStatusMessage('<@999999999999999999> 実装おわったよ')).toBe(false);
++  });
++
++  it('does not mistake prose that merely mentions a status verb for a spinner', () => {
++    // 「考え中」を含むだけの通常本文まで捨てると会話が成立しなくなる
++    expect(isEphemeralStatusMessage('いま考え中だけど、たぶんこうだと思うよ')).toBe(false);
++    expect(isEphemeralStatusMessage('調査中の件、まとまったら共有するね')).toBe(false);
++  });
++
++  it('does not mistake a quoted spinner inside prose for a status post', () => {
++    // 仕様の説明などで `⠋ 考え中…` を引用した本文を捨ててしまうと会話が止まる
++    // (相手 bot 側が「含む」判定で誤検知した実例: 2026-08-06)
++    expect(isEphemeralStatusMessage('「⠋ 考え中…」には反応しないでね')).toBe(false);
++    expect(isEphemeralStatusMessage('判定対象は ⠋⠙⠹ と 🔧 の行だよ')).toBe(false);
++  });
++
++  it('treats a streaming body still carrying the cursor as not yet settled', () => {
++    // DISCORD_STREAMING=true では本文が逐次 edit される。書きかけを確定と誤認しない
++    expect(isEphemeralStatusMessage(`${STREAMING_CURSOR}`)).toBe(true);
++    expect(isEphemeralStatusMessage(`届いた${STREAMING_CURSOR_SUFFIX}`)).toBe(true);
++    expect(
++      isEphemeralStatusMessage(
++        `🔧 Bash実行: \`npm run build\`\n\n実装おわった${STREAMING_CURSOR_SUFFIX}`
++      )
++    ).toBe(true);
++  });
++
++  it('passes the settled body through once the cursor is gone', () => {
++    // edit 完了後はカーソルが外れる = ここで初めてターンを起動してよい
++    expect(isEphemeralStatusMessage('届いたよ')).toBe(false);
++    expect(isEphemeralStatusMessage(`カーソル記号 ${STREAMING_CURSOR} の話をしてるだけだよ`)).toBe(
++      false
++    );
++  });
++});
++
++const SELF = 'self-bot-id';
++
++/**
++ * discord.js の MessageMentions#has と同じ判定をする最小スタブ。
++ * - users: 本文メンション + 返信先ユーザー (replied_user)
++ * - parsedUsers: 本文を解析した結果 (= 本文に実際に書かれたメンションのみ)
++ *   `ignoreRepliedUser: true` のときは parsedUsers 側だけを見る。
++ * - everyone: `@everyone` / `@here`。本家は `ignoreEveryone` が false なら
++ *   直接メンションを見る前に true を返す (MessageMentions.js の順序に合わせる)。
++ */
++const mentions = (input: { body?: string[]; repliedUser?: string; everyone?: boolean }) => {
++  const parsed = new Set(input.body ?? []);
++  const all = new Set([...parsed, ...(input.repliedUser ? [input.repliedUser] : [])]);
++  const everyone = input.everyone ?? false;
++  return {
++    everyone,
++    has: (user: unknown, options?: { ignoreRepliedUser?: boolean; ignoreEveryone?: boolean }) => {
++      if (!options?.ignoreEveryone && everyone) return true;
++      const id = String(user);
++      if (!all.has(id)) return false;
++      return options?.ignoreRepliedUser ? parsed.has(id) : true;
++    },
++  };
++};
++
++describe('isMentioningSelf', () => {
++  it('does not wake on a bot reply that has no mention in the body', () => {
++    // 「もう止めるね」と書いた返信で会話が再点火した実例への対策 (2026-08-06)
++    expect(isMentioningSelf(mentions({ repliedUser: SELF }), SELF, { fromBot: true })).toBe(false);
++  });
++
++  it('wakes on a bot message that mentions self in the body', () => {
++    expect(isMentioningSelf(mentions({ body: [SELF] }), SELF, { fromBot: true })).toBe(true);
++    // 返信形式そのものは使ってよい。継続スイッチはあくまで本文のメンション
++    expect(
++      isMentioningSelf(mentions({ body: [SELF], repliedUser: SELF }), SELF, { fromBot: true })
++    ).toBe(true);
++  });
++
++  it('keeps waking on a human reply without a body mention', () => {
++    expect(isMentioningSelf(mentions({ repliedUser: SELF }), SELF, { fromBot: false })).toBe(true);
++  });
++
++  it('ignores messages aimed at someone else', () => {
++    expect(isMentioningSelf(mentions({ body: ['other-id'] }), SELF, { fromBot: true })).toBe(false);
++    expect(isMentioningSelf(mentions({ body: ['other-id'] }), SELF, { fromBot: false })).toBe(
++      false
++    );
++  });
++
++  it('wakes on a body mention that Discord never resolved (bot sender)', () => {
++    // 相手 bot の送信経路が allowed_mentions を解決しないと mentions は空で届く。
++    // 本文に書いてあれば継続スイッチとして認める (2026-08-06 #サーベイ の停止原因)
++    const unresolved = mentions({});
++    expect(
++      isMentioningSelf(unresolved, SELF, {
++        fromBot: true,
++        content: `<@${SELF}> 議論を続けたいよ`,
++        selfId: SELF,
++      })
++    ).toBe(true);
++    // <@!id> 形式 (旧ニックネームメンション) も同じ扱い
++    expect(
++      isMentioningSelf(unresolved, SELF, {
++        fromBot: true,
++        content: `<@!${SELF}> よろしく`,
++        selfId: SELF,
++      })
++    ).toBe(true);
++  });
++
++  it('still stays silent for a bot reply with no body mention', () => {
++    // 緩和しても「メンションを外せば止まる」は壊さない
++    expect(
++      isMentioningSelf(mentions({ repliedUser: SELF }), SELF, {
++        fromBot: true,
++        content: 'もう止めるね',
++        selfId: SELF,
++      })
++    ).toBe(false);
++    // ロールメンション `<@&id>` は自分宛てではない
++    expect(
++      isMentioningSelf(mentions({}), SELF, {
++        fromBot: true,
++        content: `<@&${SELF}> ロール宛て`,
++        selfId: SELF,
++      })
++    ).toBe(false);
++  });
++
++  it('does not apply the text fallback to humans', () => {
++    // 人間は Discord 解決済みの mentions だけで足りる (経路が壊れていない)
++    expect(
++      isMentioningSelf(mentions({}), SELF, {
++        fromBot: false,
++        content: `<@${SELF}> やっほー`,
++        selfId: SELF,
++      })
++    ).toBe(false);
++  });
++
++  it('does not treat @everyone as a direct mention', () => {
++    // discord.js の has() は既定で @everyone を「自分宛て」に数える。
++    // それを許すとブロードキャスト 1 回で全 bot が本文応答を始める
++    expect(isMentioningSelf(mentions({ everyone: true }), SELF, { fromBot: false })).toBe(false);
++  });
++
++  it('still wakes when @everyone and a direct mention are both present', () => {
++    expect(
++      isMentioningSelf(mentions({ everyone: true, body: [SELF] }), SELF, { fromBot: false })
++    ).toBe(true);
++  });
++});
++
++describe('isEveryoneBroadcast', () => {
++  it('detects an @everyone broadcast', () => {
++    expect(isEveryoneBroadcast(mentions({ everyone: true }), SELF, { fromBot: false })).toBe(true);
++  });
++
++  it('is false without @everyone', () => {
++    expect(isEveryoneBroadcast(mentions({ body: [SELF] }), SELF, { fromBot: false })).toBe(false);
++    expect(isEveryoneBroadcast(mentions({}), SELF, { fromBot: false })).toBe(false);
++  });
++
++  it('is false when the bot is also named directly', () => {
++    // 名指しされているなら軽い挨拶ではなく本文で応答するべき
++    expect(
++      isEveryoneBroadcast(mentions({ everyone: true, body: [SELF] }), SELF, { fromBot: false })
++    ).toBe(false);
++  });
++
++  it('is false when a bot names us in the body of an @everyone post', () => {
++    // 相手 bot が allowed_mentions を解決しない経路でも、本文に書いてあれば名指し扱い
++    expect(
++      isEveryoneBroadcast(mentions({ everyone: true }), SELF, {
++        fromBot: true,
++        content: `@everyone <@${SELF}> これお願い`,
++        selfId: SELF,
++      })
++    ).toBe(false);
++  });
++
++  it('stays true for an @everyone post that names someone else', () => {
++    expect(
++      isEveryoneBroadcast(mentions({ everyone: true, body: ['other-id'] }), SELF, {
++        fromBot: false,
++      })
++    ).toBe(true);
++  });
++});
++
++describe('replyAllowedMentions', () => {
++  it('drops the reply ping when replying to a bot', () => {
++    // 返信通知だけで相手のターンが起動しないようにする (継続スイッチは本文メンション)
++    expect(replyAllowedMentions({ author: { bot: true } })).toEqual({
++      parse: ['users'],
++      repliedUser: false,
++    });
++  });
++
++  it('keeps the reply ping when replying to a human', () => {
++    // 人間には従来どおり通知を飛ばす
++    expect(replyAllowedMentions({ author: { bot: false } })).toEqual({
++      parse: ['users'],
++      repliedUser: true,
++    });
++  });
++});

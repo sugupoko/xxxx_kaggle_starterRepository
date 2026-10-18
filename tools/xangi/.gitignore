@@ -1,0 +1,10 @@
+# tools/xangi/ の状態・キャッシュ・ローカル設定（コミットしない）
+# - 状態ファイルの mtime は「最終実行時刻」として切り分けに使うので、消さずに置いておく
+# - xangi.env には Discord のチャンネル ID や端末固有のパスが入るので絶対にコミットしない
+xangi.env
+.claude_usage_*.json
+.gpu_idle_watch.state
+.gpu_idle_watch.pid
+.kaggle_elapsed_notify.pid
+.kaggle_elapsed_notify.lock
+*.log

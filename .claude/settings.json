@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "latest=$(ls -t \"$CLAUDE_PROJECT_DIR\"/daily_reports/[0-9]*.md 2>/dev/null | head -1); if [ -n \"$latest\" ]; then echo \"[Latest daily report: $latest]\"; cat \"$latest\"; else echo \"[No daily report yet. Consider running /daily-report]\"; fi",
+            "command": "d=\"$CLAUDE_PROJECT_DIR/daily_reports\"; sfx=\"${DAILY_REPORT_SUFFIX:-}\"; latest=$(ls \"$d\" 2>/dev/null | grep -E \"^[0-9]{8}${sfx}\\.md$\" | sort | tail -1); if [ -n \"$latest\" ]; then echo \"[Latest daily report: daily_reports/$latest]\"; cat \"$d/$latest\"; day=$(printf %.8s \"$latest\"); others=$(ls \"$d\" | grep -E \"^${day}(_[^.]*)?\\.md$\" | grep -vx \"$latest\" | tr \"\\n\" \" \"); if [ -n \"$others\" ]; then echo \"[Same-day reports by other agents (not loaded): $others]\"; fi; else echo \"[No daily report yet. Consider running /daily-report]\"; fi",
             "timeout": 10
           },
           {
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "today=$(date +%Y%m%d); report=\"$CLAUDE_PROJECT_DIR/daily_reports/${today}.md\"; if [ -f \"$report\" ]; then echo \"\" >> \"$report\"; echo \"<!-- session ended: $(date +%Y-%m-%dT%H:%M:%S%z) -->\" >> \"$report\"; fi",
+            "command": "off=\"${REPORT_TZ_OFFSET_HOURS:-9}\"; today=$(date -u -d \"+${off} hours\" +%Y%m%d); report=\"$CLAUDE_PROJECT_DIR/daily_reports/${today}${DAILY_REPORT_SUFFIX:-}.md\"; if [ -f \"$report\" ]; then echo \"\" >> \"$report\"; echo \"<!-- session ended: $(date -u -d \"+${off} hours\" +%Y-%m-%dT%H:%M:%S)+${off}h -->\" >> \"$report\"; fi",
             "timeout": 5
           }
         ]

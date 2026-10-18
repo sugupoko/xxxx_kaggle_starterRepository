@@ -25,6 +25,7 @@ knowledge/
   data/             # Data characteristics, leakage, fold-design insights
   error/            # Error patterns and their fixes
   decision/         # Direction decisions and rationale (why chosen / dropped)
+  ledgers/          # List-style ledgers for runs, data versions, experiment folders and the ★ index (not wiki pages; see AGENTS.md)
 ```
 
 Add categories freely (e.g. `metric/`, `pipeline/`). When you do, add a section in INDEX.

@@ -265,3 +265,40 @@ id_ed25519.*
 *.pfx
 *.credentials.json
 .credentials.json
+
+# ── 大容量生成物の除外ポリシー（AGENTS.md ルール 16） ─────────────────────────
+# 既定方針: 「生ログ・キャッシュは除外し、manifest / summary / sha256 だけ追跡する」。
+# 実験フォルダを作った時点で、そのフォルダ固有の大容量物をここに追記する
+# （溜めてからまとめて判断すると、数百 MB 単位の除外判断が一度に来る）。
+# 例: workspace/expA21_xxx/raw/   ← 生 JSON は除外し、RAW_MANIFEST.json（sha256）だけ追跡
+#
+# 画像・特徴量キャッシュ本体（再生成可能）
+workspace/**/cache/*.npy
+workspace/**/cache/*.npz
+workspace/**/cache/*.pt
+workspace/**/npy_*/
+# 転送用バンドル（再生成可能）
+*.tar.zst
+# Kaggle Dataset アップロード対象（CLAUDE.md の規約どおり管理外）
+workspace/*/kaggle_dataset/
+# 実験フォルダに紛れ込んだ SSH 鍵（CLAUDE.md の鍵ルール）
+workspace/**/ssh/
+# 手元で生成した提出物（記録は submit/SUBMISSIONS.md）
+/submission.csv
+# 手動バックアップ
+*.bak
+
+# ── 複数エージェント運用の一時ファイル（AGENTS.md） ───────────────────────────
+# 宣言プロトコルの実行中ロック（ルール 5・終了時に消える）
+.locks/
+# ★採番の排他ロック（中身は無意味・共有しない）
+knowledge/ledgers/.star_counter.lock
+# taskboard の生成物（task.py build / build_dashboard.py で作り直す）
+taskboard/board.html
+taskboard/dashboard.html
+# 監視ツールの実行時 state（実行環境ごとに変わる）
+tools/.kaggle_*watch*.json
+tools/.claude_usage_*.json
+
+# LB probing の提出物（.claude/skills/probing。提出物そのものなので commit しない）
+/probing/subs/

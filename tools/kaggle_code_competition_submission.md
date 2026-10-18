@@ -8,7 +8,7 @@
 | 種別 | 提出方法 | CLI で完結するか |
 |---|---|---|
 | **CSV Competition** (Submission) | `submission.csv` を直接 upload | `kaggle competitions submit -c <comp> -f sub.csv -m "..."` で完結 |
-| **Code Competition** (Notebook) | Kaggle 上で Notebook を実行 → そこから "Submit to Competition" | **手動ステップが残る**（最後の "Submit" ボタン）。upload までは CLI 可 |
+| **Code Competition** (Notebook) | Kaggle 上で Notebook を実行 → そこから "Submit to Competition" | push〜提出まで CLI 可（`submit -k -f -v`・§8.0）。ただし**提出前に人間の OK を挟む**運用（§3.5） |
 
 このガイドは **Code Competition** 向け。CSV Competition なら `kaggle competitions submit` 一発で済むのでこのガイドは不要。
 
@@ -41,9 +41,9 @@
 Kaggle 上
 ├── Dataset (private)                  ← /kaggle/input/<dataset-slug>/
 └── Notebook (private)                 ← attach: dataset + competition data
-       ↓ ユーザーが Save & Run All（手動）
+       ↓ kaggle kernels push の時点で実行開始（UI の Save & Run All は不要・§8.2）
        ↓ Notebook が /kaggle/working/submission.csv 生成
-       ↓ ユーザーが "Submit to Competition"（手動）
+       ↓ 検証 → 人間の OK → 提出（UI の "Submit to Competition" か CLI・§3.5）
 LB
 ```
 
@@ -93,6 +93,12 @@ LB
 - `competition_sources` に競技スラッグを書くと、`/kaggle/input/<competition-slug>/` に競技データが自動マウントされる
 - `enable_internet: false` は Code Competition 必須（`pip install` 不可）
 - `enable_gpu: true` にすると T4×2（時間切れリスクあり）。`false` なら CPU のみ
+- ★**GPU 種別は `"machine_shape"` で明示する**（例: `"machine_shape": "NvidiaTeslaT4"`）。書かないと **P100 が割り当たることがあり**、
+  コンペによっては Submit 自体が拒否される（`Your Notebook cannot use P100 GPUs in this competition.`）
+  - 有効値は `NvidiaTeslaT4` / `NvidiaTeslaP100` / `Tpu1VmV38` など。キー名は **snake_case**（`machineShape` や `GpuT4x2` のような UI 表記は**エラーにならず黙って無視される**）
+    → push 後に `kaggle kernels pull <user>/<slug> -p <dir> -m` で実際の値を必ず確認する
+  - P100（sm_60）は Kaggle 既定イメージの新しい torch に対応カーネルが無いことがあり、`torch.cuda.is_available()` が True でも最初の CUDA 演算で落ちる
+  - UI 側で GPU を切り替えても、次の `kernels push` でメタデータの値に戻される。**ファイル側に持たせること**
 - タイトル変更時は slug が変わる: タイトルに CV スコアを入れたい場合は、初回 push 後にタイトル更新 → 2 回目の push で slug が変わる **ことに注意**
 
 ### 2.3 `inference_notebook.py` の骨格
@@ -186,13 +192,15 @@ m = json.load(open("kernel-metadata.json"))
 m["title"] = f"v00X <name> (OOF=$OOFft)"
 json.dump(m, open("kernel-metadata.json", "w"), ensure_ascii=False, indent=2)
 PY
-kaggle kernels push -p .
+# ★push した時点で Kaggle 上の run が始まる（§8.2）。版番号は push 出力にしか出ないので控える（§8 参照）
+kaggle kernels push -p . | tee push.log
+grep -o 'Kernel version [0-9]* successfully pushed' push.log || { echo "push 失敗" >&2; exit 1; }
 
 cat <<EOF
-NEXT STEPS (manual):
-  1. Open notebook URL
-  2. Save & Run All  → submission.csv が生成
-  3. Submit to Competition
+NEXT STEPS:
+  1. tools/kaggle_submit_watch.sh で完走待ち + submission.csv 検証（提出はしない）
+  2. 人間の OK
+  3. tools/kaggle_submit_now.sh で提出（または UI の Submit to Competition）
 EOF
 ```
 
@@ -209,11 +217,63 @@ cp -r submit/v001_<prev> submit/v002_<new>
 # 2. アップロード
 bash submit/v002_<new>/upload.sh
 
-# 3. （手動）Kaggle UI で Run All → Submit to Competition
+# 3. push の時点で run 開始（UI の Save & Run All は不要・§8.2）。
+#    push 出力 "Kernel version N successfully pushed." の N を控える（提出に必須・§8）
 
-# 4. LB が出たら記録
+# 4. 見張り＋検証（自動・提出しない）→ 人間の OK → 提出（§3.5）
+bash tools/kaggle_submit_watch.sh <user>/<kernel-slug> <comp-slug> "<message>"        # 報告して止まる
+bash tools/kaggle_submit_now.sh  <user>/<kernel-slug> <comp-slug> "<message>" <N>    # OK が出てから
+
+# 5. LB が出たら記録
 # submit/SUBMISSIONS.md に行を追加
 ```
+
+## 3.5 提出の操作境界 — **確認してから提出**
+
+**方針: 検証までは自動、提出は人間の OK の後。** 全自動（完走を検知して即提出）と全手動の間を取る。
+
+| 段階 | 誰が / 何が | 中身 |
+|---|---|---|
+| 1. 準備 | エージェント | Dataset upload・Notebook push（= run 開始）・版番号の控え |
+| 2. 見張り＋検証 | `tools/kaggle_submit_watch.sh` | kernel 完走を待ち、出力 `submission.csv` を下の項目で形式検証して**報告。提出はしない** |
+| 3. OK 出し | **人間** | 報告を見て「出してよい」と一言。**人間の手が要るのはここだけ**（Save & Run All は不要・§8.2） |
+| 4. 提出＋確認 | `tools/kaggle_submit_now.sh` | `-k -f -v` で提出し、**自分の提出 ref** を特定して採点確定まで見張る |
+
+- 報告・結果の通知は、`XANGI_CMD` と `NOTIFY_CHANNEL` の**両方が設定されているときだけ** xangi 経由でチャットへ送る（任意モジュール `tools/xangi/`・共通関数 `tools/notify.sh`）。
+  未設定なら標準出力とログ（`/tmp/kaggle_submit_watch/<slug>/`）に出すだけで、スクリプトはそのまま動く
+- `kaggle_submit_now.sh` は**冪等ではない**。失敗しても再実行の前に `kaggle competitions submissions <comp>` で入っていないことを確認する（多重提出防止）
+
+### なぜ全自動にしなかったか
+**大会の日次提出上限は API から取得できない**（提出コマンドの出力にしか出ない・§8.3）。
+全自動だと、notebook が「完走したが中身が壊れている」ケースで**枠を 1 つ黙って溶かす**経路が残る。
+提出直前に人間の目を 1 回入れることで、ここだけを塞ぐ。**それ以外に全自動を避ける理由はない**（検証自体は機械に任せる）。
+
+### 🔴 実例: 見張りが「自分の提出」を見ていなかった
+旧実装は提出後に `competition_submissions(comp)[0]` = **表の一番上（最新の提出）**を読んでいた。
+提出前の先頭 ref と比較する gate はあったが、**自分より後に出た提出は除外できない**。
+
+- **実害**: 2 本を約 10 秒差で続けて提出したら、1 本目の見張りが 2 本目の提出を掴み、**1 本目の LB として 2 本目のスコアを報告**した。
+  片方の LB を他方の値で置き換え、どれが一番良いかの判定を誤らせる種類のバグ。**続けて出すと必ず起きる**
+- **対策（`kaggle_submit_now.sh` に実装済み）**: 提出直後に **`description`（提出メッセージ）完全一致**で自分の ref を 1 回だけ特定して固定し、
+  以後はその ref だけを読む。特定できなければ非 0 で止めて人に投げる（推測で別の ref を掴まない）。
+  → **提出メッセージは毎回一意にする**（版番号・日時を入れる）
+- 🔴 教訓: 「表の一番上」「status」のような**当てにならない指標を正本にしない**。提出の同一性は **ref** でしか担保できない
+
+### 検証項目（`kaggle_submit_watch.sh` が自動で見る）
+報告に必ず載せる。**1 つでも落ちたら提出せず、赤で報告する。** 項目はコンペの提出形式に合わせて調整する（以下は「ID 列 + 確率列」の例）。
+
+| # | 項目 | 落ちる例 |
+|---|---|---|
+| 1 | kernel が `COMPLETE`（`ERROR` / `CANCEL` で即停止） | OOM・timeout |
+| 2 | `submission.csv` が存在する | 出力パス違い |
+| 3 | ヘッダが期待どおり（ID 列 + 予測列） | 列名の typo・順序違い |
+| 4 | 行数 ≥ 1 かつ ID 重複なし | 空出力・取りこぼし |
+| 5 | 全数値が値域内（確率なら `[0, 1]`）・NaN / Inf なし | sigmoid 忘れ・欠損補完漏れ |
+| 6 | **定数列がない**（全行同じ値の列） | 重みが載っていない・Dataset 未 mount |
+| 7 | 各列の mean / min / max | 分布が潰れていないか目視用 |
+
+> ⚠️ **6 は「Dataset 未 mount のまま実行」を検知するための項目。** このとき notebook は**落ちずに完走してしまう**
+> （フォールバックの既定値で埋まる等）ので、status だけ見ていると気付けない。
 
 ## 4. ハマりやすい注意点
 
@@ -226,7 +286,7 @@ bash submit/v002_<new>/upload.sh
 | `competition_sources` に書いた competition で auth エラー | `403 Forbidden` | Kaggle UI から競技に参加（Rules accept）してから push |
 | Dataset が `dir-mode zip` だと中身がアーカイブ化されて読みにくい | path が `/kaggle/input/<slug>/<file>.zip` | `--dir-mode tar` or 省略（推奨）で平置きに |
 | competition slug が分からない | - | URL の `/competitions/<slug>` 部分。または `kaggle competitions list -s <keyword>` |
-| ユーザー名 | - | `cat ~/.kaggle/kaggle.json` |
+| ユーザー名 | - | `python -c "import json,os;print(json.load(open(os.path.join(os.environ.get('KAGGLE_CONFIG_DIR',os.path.expanduser('~/.kaggle')),'kaggle.json')))['username'])"`（**`cat kaggle.json` は鍵まで出るので使わない**） |
 
 ## 5. ベストプラクティス
 
@@ -293,6 +353,22 @@ pip install -U kaggle
 kaggle competitions list      # 何か返ってくれば OK
 ```
 
+### 6.1 `HOME` がずれる環境では `KAGGLE_CONFIG_DIR` を明示する
+
+コンテナ・常駐 bot・cron・`setsid` で切り離したプロセスなど、**実行時の `HOME` が対話シェルと違う**環境では、
+`~/.kaggle/kaggle.json` が「無い」ように見える。**credential は在るのに、`HOME` がズレて見えていないだけ**のことが多い。
+
+```bash
+export KAGGLE_CONFIG_DIR=<kaggle.json を置いたディレクトリ>   # HOME がどこでも通る
+export PATH="<kaggle CLI の bin ディレクトリ>:$PATH"            # CLI も HOME 配下にあるなら同様にずれる
+```
+
+- 典型: 認証ディレクトリを別パスへ read-only マウントしている / 常駐プロセスだけ別ユーザーの `HOME` で動いている
+- 読み取り専用マウントでも、認証に書き込みは不要なので問題ない
+- 切り離して走らせるスクリプトには、この設定を**スクリプト内に**持たせる（親シェルの env を当てにしない）。
+  `tools/kaggle_submit_now.sh` は `KAGGLE_CONFIG_DIR` / `KAGGLE_EXTRA_PATH` / `KAGGLE_EXTRA_PYTHONPATH` を env で受ける
+- 「この環境では Kaggle 経路は使えない」と結論する前に、`KAGGLE_CONFIG_DIR` を明示して再確認する
+
 ## 7. 関連 CLI コマンド早見表
 
 ```bash
@@ -314,11 +390,65 @@ kaggle competitions list -s <keyword>
 kaggle competitions files -c <slug>
 kaggle competitions download -c <slug> -p <folder>
 kaggle competitions submissions <slug>
-# kaggle competitions submit <slug> -f <csv> -m "..."   ← CSV Competition のみ
+
+# 提出（CSV Competition）: ローカルの CSV を直接送る
+kaggle competitions submit <slug> -f <csv> -m "..."
+
+# 提出（Code Competition）: -k と -f と -v の 3 つが要る（-v は任意ではない・§8）
+kaggle competitions submit <slug> -k <username>/<kernel-slug> -f submission.csv -v <N> -m "..."
+
 kaggle competitions leaderboard -c <slug> --show
 ```
 
-## 8. 提出フォルダの構成例（プレースホルダ）
+## 8. CLI 提出の落とし穴（実地で踏んだ）
+
+### 8.0 Code Competition も CLI から提出できる。ただし `-v` は必須
+`-k / --kernel` を付ければ Code Competition も CLI から提出できる（`-f` は「kernel が出力したファイル名」）。
+ただし `--help` 上は任意に見える **`-v / --version` が実際には必須**で、`-k` と `-f` だけだと必ずこう落ちる:
+
+```
+Code competition submissions require both the output file name and the version number
+```
+
+**版番号はどこからも取得できない**（`kaggle kernels status` にも `kernels list` にも出ない）。
+**唯一の一次情報は `kaggle kernels push` の出力 `Kernel version N successfully pushed.`** なので、push した時点で控える。
+`tools/kaggle_submit_now.sh` は版番号を必須引数にして、忘れたら実行前に止まる。
+
+> 🔴 教訓: `--help` を読んだだけで「できる」と書かない。**実際に 1 回打って確認してから**手順書に載せる。
+> この種の誤記で、自動化できる提出を人間に手で押させたことがある。
+
+### 8.1 kernel の実 slug は `id` ではなく **title** から決まる
+`kernel-metadata.json` に `id` を書いても、**title のスラグ化が優先される**。push は成功し、警告が 1 行出るだけ:
+
+```
+Your kernel title does not resolve to the specified id. This may result in surprising behavior.
+```
+
+例: `id` に `<user>/my-comp-infer` と書き、title を `My Comp Ens5 CV0.9123 Infer` にすると、実 slug は `my-comp-ens5-cv0-9123-infer` になる。
+**`id` の値を `kaggle kernels status` に渡すと "Permission denied / wrong kernel slug" で落ちる**ので、watch / submit スクリプトが動かない。
+実 slug は `kaggle kernels list -m -s <keyword>` で引く。
+
+> **「title に CV スコアを埋める」（§5.1）と「`id` で kernel を管理する」は両立しない。** どちらかを選ぶ:
+> ① title を変えるなら `id` を title 由来の slug に合わせる
+> ② title を `id` と同形にして、CV は dataset 側の title / description に書く
+
+### 8.2 `kaggle kernels push` は **push した時点で run が始まる**
+UI で Save & Run All を押す必要は**ない**。push のたびに 1 run 走る（GPU 枠も消費する）ので、メタデータだけ直したい時も push = 実行になることに注意。
+**人間の手が要るのは提出の OK 出しだけ**（§3.5）。
+
+### 8.3 日次提出上限は **UTC 日**単位。上限値は提出して初めて分かる
+上限は API からは取得できない（`competitions list -v` の全フィールドに無い）が、**提出コマンドの標準出力に出る**:
+
+```
+2 submissions remaining today.
+```
+
+上限値はコンペごとに違う（コンペ例: 5 回 / 日）。Rules と、この出力で確認する。
+
+> ⚠️ **境界は UTC 日**。JST 00:00〜09:00 の提出は UTC では前日に入る。
+> **日本時間の午前中に出す提出は前日の枠を食う。** 枠を数えるときは UTC で数えること。
+
+## 9. 提出フォルダの構成例（プレースホルダ）
 
 新しく提出フォルダを作るときの雛形イメージ（`<exp名>` は元実験フォルダ名に置き換える）:
 

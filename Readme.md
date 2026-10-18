@@ -1,6 +1,6 @@
 # Competition Experiment Template
 
-**v2.7.2**
+**v2.8.0**
 
 > Supports **Kaggle** and **non-Kaggle** competitions (grand-challenge.org, CodaBench, custom platforms).
 > Designed for **Claude Opus (1M context)**.
@@ -26,7 +26,7 @@ Supports **Kaggle** and **non-Kaggle** platforms (grand-challenge.org, CodaBench
 ### Known Limitations
 
 - **Final submission is manual** — Claude prepares and validates artifacts, but the actual upload / "Submit to Competition" click (Kaggle Dataset, Code Competition Notebook, grand-challenge, etc.) is always done by the user
-- **Discussion monitoring relies on scraping** — the official Kaggle API has no discussion endpoint, so `survey/discussion/` uses Playwright-based scraping (keep 2-3 s between requests)
+- **Discussion monitoring** — recent `kaggle` CLI versions expose discussion topics/messages, used by `tools/kaggle_disc_watch.py` / `kaggle_disc_dump.py`; on older CLIs fall back to Playwright-based scraping (keep 2-3 s between requests)
 - **Model files are not tracked by git** — `model/`, `*.ckpt`, `*.pth` etc. are gitignored for size; move weights via Kaggle Dataset / external storage
 - **Some docs are Japanese-only** — guides under `tools/` and `reference/README.md` (see Language Setup below)
 
@@ -65,7 +65,7 @@ bash setup.sh ja   # Japanese (default)
 
 This updates: `CLAUDE.md`, `KAGGLE_DIRECTION.md`, agent definitions, skill definitions, and templates. It also enables the secret-blocking git pre-commit hook (`core.hooksPath=tools/git-hooks`) — or enable it manually with `bash tools/git-hooks/install.sh`. The hook is local config, so run this once per clone.
 
-**Localization scope** — files switched by `setup.sh` (root is the Japanese original; `locales/ja` is a byte-identical copy, `locales/en` is the translation; CI enforces the sync): `CLAUDE.md`, `KAGGLE_DIRECTION.md`, `.claude/agents/`, `.claude/skills/`, `knowledge/` scaffolding (`README.md` / `_template.md` / `INDEX.md`), and `submit/SUBMISSIONS.md`. Of these, `knowledge/INDEX.md` and `submit/SUBMISSIONS.md` are user-editable seeds — `setup.sh` refreshes them only while pristine, and the CI byte-identity check excludes them. **Japanese only (not localized)**: guides under `tools/` (`runpod/README.md`, `kaggle_code_competition_submission.md`, …), `reference/README.md`, and `claudeSummary.md` (user content — seeded once, never overwritten by `setup.sh`).
+**Localization scope** — files switched by `setup.sh` (root is the Japanese original; `locales/ja` is a byte-identical copy, `locales/en` is the translation; CI enforces the sync): `CLAUDE.md`, `KAGGLE_DIRECTION.md`, `.claude/agents/`, `.claude/skills/`, `knowledge/` scaffolding (`README.md` / `_template.md` / `INDEX.md`), and `submit/SUBMISSIONS.md`. Of these, `knowledge/INDEX.md` and `submit/SUBMISSIONS.md` are user-editable seeds — `setup.sh` refreshes them only while pristine, and the CI byte-identity check excludes them. **Japanese only (not localized)**: `AGENTS.md`, `templates/`, `taskboard/README.md`, guides under `tools/` (`runpod/README.md`, `kaggle_code_competition_submission.md`, `xangi/`, …), `reference/README.md`, and `claudeSummary.md` (user content — seeded once, never overwritten by `setup.sh`).
 
 The sync-check CI (`.github/workflows/locale-sync.yml`) exists to maintain this template repo itself: the byte-identity check auto-skips on forks (only the shell/Python syntax checks run), so competition forks can keep the workflow as-is — or simply delete the file after running `setup.sh`.
 
@@ -83,6 +83,7 @@ bash rundocker.sh       # launch a container with the repo mounted
 #### Instructions & Rules
 - **CLAUDE.md** — Instructions for Claude Code: Opus (1M context) meta-rules (parallel-load for cross-experiment synthesis), competition onboarding checklist (7 items), training code rules, fold design, error analysis, submission workflow (Kaggle / prediction-file / Docker)
 - **KAGGLE_DIRECTION.md** — Competition-specific settings + design intent (safe + bold, fold design, preprocessing, metric guidelines). Filename is historical; content applies to any platform
+- **AGENTS.md** — Rules for running **multiple agents (Claude + other bots) + humans** in one shared folder (Japanese only): write areas by prefix, ★-number allocation with `flock`, one git lane / one submit lane, never retry submissions, independent recomputation instead of splitting work, sha256-committed blind audits, the 4 elements of a claim. Rules 7–12 also help with a single agent
 
 #### Custom Agents (`.claude/agents/`)
 | Agent | Model | Purpose |
@@ -105,6 +106,7 @@ bash rundocker.sh       # launch a container with the repo mounted
 | `/strategy [focus]` | Cross-experiment synthesis via competition-strategist agent. Use weekly or at inflection points |
 | `/survey-papers [keyword]` | Paper/solution research (`context: fork` keeps main context clean) |
 | `/wiki [add\|find\|promote\|consolidate]` | Accumulate/search/consolidate competition knowledge in the `knowledge/` stock layer (atomic pages + INDEX). Distill from the daily-report flow |
+| `/probing [metric]` | Leaderboard probing: diagnose feasible modes (value / structural / confusion-matrix / ID) first, then run safely within quota and rules |
 
 #### Tools (`tools/`)
 | File | Description |
@@ -112,7 +114,14 @@ bash rundocker.sh       # launch a container with the repo mounted
 | `kaggle_elapsed_time.py` | Submission status monitoring & elapsed time |
 | `kaggle_upload.sh` | Folder upload to Kaggle Dataset with versioning |
 | `kaggle_code_competition_submission.md` | End-to-end flow for Kaggle Code Competitions (Dataset + Notebook + manual submit). Templates for `kernel-metadata.json`, `dataset-metadata.json`, `upload.sh`, common pitfalls |
-| `runpod/` | External-GPU (RunPod) ops guide, verified on real hardware (runpodctl 2.3.0): connect / key handling via Secrets / cost guards / storage 3-tier (Kaggle = source of truth, Network Volume = scratch). Scripts: `runpod_ops.py`, `smoke_test.sh`, `startup.sh`, `.runpod.env.example`. Copy the folder into any repo to port it |
+| `runpod/` | External-GPU (RunPod) ops guide, verified on real hardware (runpodctl 2.3.0): connect / key handling via Secrets / cost guards / storage 3-tier (Kaggle = source of truth, Network Volume = scratch). Scripts: `runpod_ops.py`, `smoke_test.sh`, `startup.sh`, `.runpod.env.example`. Copy the folder into any repo to port it. Also `rp_ssh.sh` (ephemeral SSH key), `rp_key_guard.sh` (shared-key lock), `rp_credit_watch.sh` (balance / idle-pod watch) |
+| `kaggle_submit_watch.sh` / `kaggle_submit_now.sh` | "Confirm, then submit": wait for the kernel and validate `submission.csv` without submitting → human OK → submit once and track **your own** submission ref until scored (never retry) |
+| `star.sh` | ★-number allocation for daily reports with `flock` + consistency `check` |
+| `launch_once.sh` / `ensure_env.sh` / `deadline_countdown.py` | Detached launch without double-starts / self-healing Python deps / days left + current phase |
+| `kaggle_code_watch.py` / `kaggle_disc_watch.py` / `kaggle_disc_dump.py` | Diff-only watchers for public notebooks and discussions, full discussion dump |
+| `kaggle_trt_t4_runbook.md` | TensorRT conversion test on Kaggle T4 |
+| `openrouter/` | OpenRouter balance watch (optional) |
+| `xangi/` | **Optional** module for running bots via xangi + Discord (supervisor, health daemon, usage gauge, bot-to-bot mention protocol). The core works without it; notifications from core scripts go through xangi only when `XANGI_CMD` + `NOTIFY_CHANNEL` are set |
 
 #### Reference Code (`reference/`)
 - **2.5D segmentation template** based on PyTorch Lightning + timm + smp
@@ -124,6 +133,8 @@ bash rundocker.sh       # launch a container with the repo mounted
 - **Daily reports** (`daily_reports/YYYYMMDD.md`): Central record; append insights as they emerge
 - **Submission history** (`submit/SUBMISSIONS.md`): CV/LB scores and parameters for all submissions
 - **claudeSummary.md**: Cross-experiment insights and best score history
+- **Pre-registration** (`templates/PREREG_TEMPLATE.md`): freeze the decision band before seeing numbers
+- **Taskboard** (`taskboard/`): local, dependency-free tickets (`task.py`, IDs claimed with `O_EXCL`) + generated `board.html` / `dashboard.html`. Ledgers in `knowledge/ledgers/`
 
 #### Training Code Rules
 - AMP (Mixed Precision) always ON
@@ -139,6 +150,7 @@ bash rundocker.sh       # launch a container with the repo mounted
 ./
 ├── CLAUDE.md                         # Claude Code instructions
 ├── KAGGLE_DIRECTION.md               # Competition settings + design intent
+├── AGENTS.md                         # Multi-agent rules (Japanese only)
 ├── claudeSummary.md                  # Cross-experiment insights
 ├── myMemo.md                         # Personal notes
 ├── LICENSE                           # MIT License
@@ -150,7 +162,7 @@ bash rundocker.sh       # launch a container with the repo mounted
 │   └── en/                           # English
 ├── .claude/
 │   ├── agents/                       # Custom Agents (5 types)
-│   └── skills/                       # Skills (7 commands)
+│   └── skills/                       # Skills (8 commands)
 ├── .github/
 │   └── workflows/                    # CI (locale sync check)
 ├── reference/                        # Reference code (2.5D Seg)
@@ -158,8 +170,14 @@ bash rundocker.sh       # launch a container with the repo mounted
 │   ├── kaggle_elapsed_time.py        # Submission monitoring
 │   ├── kaggle_upload.sh              # Dataset upload
 │   ├── kaggle_code_competition_submission.md  # Code Competition submission guide
+│   ├── kaggle_submit_watch.sh / kaggle_submit_now.sh  # Confirm-then-submit flow
+│   ├── star.sh                       # ★-number allocation (flock)
 │   ├── git-hooks/                    # Secret-blocking pre-commit hook (+ install.sh)
-│   └── runpod/                       # External-GPU (RunPod) ops guide + scripts
+│   ├── runpod/                       # External-GPU (RunPod) ops guide + scripts
+│   ├── openrouter/                   # OpenRouter balance watch (optional)
+│   └── xangi/                        # xangi + Discord bot ops (optional)
+├── taskboard/                        # Local tickets (task.py) + board/dashboard generators
+├── templates/                        # PREREG / SESSION_NOTES / daily report / ledger templates
 ├── submit/
 │   └── SUBMISSIONS.md                # Submission history
 ├── datasets/                         # Competition data
@@ -170,6 +188,7 @@ bash rundocker.sh       # launch a container with the repo mounted
 ├── knowledge/                        # Knowledge wiki (stock layer)
 │   ├── INDEX.md                      #   retrieval index (load this first)
 │   ├── technique/ data/ error/ decision/
+│   ├── ledgers/                      #   run / data-version / experiment / ★ ledgers
 │   └── _template.md
 ├── daily_reports/                    # Daily reports (flow layer)
 └── workspace/                        # Experiment folders
@@ -198,7 +217,7 @@ Claude Code を前提に、**データ取得 → EDA → 調査（論文/類似�
 ### 既知の制約
 
 - **最終提出は手動** — 提出物の生成・検証までは Claude が行うが、実際のアップロードや "Submit to Competition" の操作は必ずユーザーが行う
-- **ディスカッション取得はスクレイピング依存** — 公式 Kaggle API にディスカッション取得機能がないため、`survey/discussion/` は Playwright によるスクレイピングで運用する（リクエスト間 2-3 秒のマナー厳守）
+- **ディスカッション取得** — 最近の `kaggle` CLI はディスカッションのトピック・本文を取得できるので `tools/kaggle_disc_watch.py` / `kaggle_disc_dump.py` を使う。古い CLI では Playwright によるスクレイピングで代替する（リクエスト間 2-3 秒のマナー厳守）
 - **モデルファイルは git 管理外** — `model/` や `*.ckpt` / `*.pth` はサイズの都合で gitignore 済み。重みの移動は Kaggle Dataset や外部ストレージで行う
 - **一部ドキュメントは日本語のみ** — `tools/` 配下のガイドと `reference/README.md`（ローカライズ対象の境界は English 節の Language Setup を参照）
 
@@ -231,6 +250,7 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 #### 指示書・ルール
 - **CLAUDE.md** — Claude Code への指示書。Opus (1M context) 用のメタルール（横断分析時に並列ロードしていい指針）、コンペ開始時の把握フェーズ（7項目）、学習コードの鉄則、Fold設計、エラー分析、提出ワークフロー（Kaggle / 予測ファイル / Docker）
 - **KAGGLE_DIRECTION.md** — コンペ固有の設定 + 設計意図（堅実＋爆発、Fold設計、前処理、評価指標の判断指針）。ファイル名は歴史的経緯で Kaggle のままだが、中身は汎用の設計原則
+- **AGENTS.md** — **複数エージェント（Claude + 他の bot）＋人間**で同じ共有フォルダを回すときのルール: 接頭辞による書き込み領域、`flock` による★採番、git と提出のレーン分け、提出をリトライしない、手分けより独立再計算、sha256 コミットメントでの盲検監査、主張の 4 要素。ルール 7〜12 は 1 エージェントでも効く
 
 #### Custom Agents（`.claude/agents/`）
 | エージェント | モデル | 用途 |
@@ -253,6 +273,7 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 | `/strategy [追加観点]` | competition-strategist agent で横断 synthesis。週1回や局面の変わり目で |
 | `/survey-papers [キーワード]` | 論文・解法調査（`context: fork` でメインコンテキストを汚さない） |
 | `/wiki [add\|find\|promote\|consolidate]` | コンペ知識を `knowledge/` ストック層（原子ページ + INDEX）に蓄積・検索・整理。daily_report のフローから蒸留して昇格 |
+| `/probing [指標]` | Leaderboard probing。可能なモード（値 / 構造 / 混同行列 / ID）を先に診断し、提出枠とルールの範囲で安全に実行 |
 
 #### ツール（`tools/`）
 | ファイル | 説明 |
@@ -260,7 +281,14 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 | `kaggle_elapsed_time.py` | 提出状況の監視・経過時間計測 |
 | `kaggle_upload.sh` | フォルダを Kaggle Dataset にアップロード・バージョン管理 |
 | `kaggle_code_competition_submission.md` | Kaggle Code Competition 用の提出フロー全文（Dataset 作成 → Notebook push → 手動 submit）。`kernel-metadata.json` / `dataset-metadata.json` / `upload.sh` の雛形とハマりどころ集 |
-| `runpod/` | 外部GPU（RunPod）の運用ガイド（実機 runpodctl 2.3.0 で検証）。接続 / Secrets による鍵運用 / コスト自動停止 / ストレージ3層（Kaggle=真実・Volume=scratch）。スクリプト: `runpod_ops.py` / `smoke_test.sh` / `startup.sh` / `.runpod.env.example`。フォルダごとコピーで他リポジトリへ移植可 |
+| `runpod/` | 外部GPU（RunPod）の運用ガイド（実機 runpodctl 2.3.0 で検証）。接続 / Secrets による鍵運用 / コスト自動停止 / ストレージ3層（Kaggle=真実・Volume=scratch）。スクリプト: `runpod_ops.py` / `smoke_test.sh` / `startup.sh` / `.runpod.env.example`。フォルダごとコピーで他リポジトリへ移植可。`rp_ssh.sh`（一時 SSH 鍵）/ `rp_key_guard.sh`（共有鍵の排他）/ `rp_credit_watch.sh`（残高・停止 pod 監視）も同梱 |
+| `kaggle_submit_watch.sh` / `kaggle_submit_now.sh` | 「確認してから提出」: kernel 完走を待って `submission.csv` を検証（提出しない）→ 人間の OK → 1 回だけ提出し、**自分の**提出 ref を採点確定まで追う（リトライしない） |
+| `star.sh` | 日報の★番号を `flock` で払い出し + 整合 `check` |
+| `launch_once.sh` / `ensure_env.sh` / `deadline_countdown.py` | 二重起動しない detach 起動 / Python 依存の自己修復 / 残り日数と現フェーズ |
+| `kaggle_code_watch.py` / `kaggle_disc_watch.py` / `kaggle_disc_dump.py` | 公開ノートブック・ディスカッションの差分ウォッチャー、ディスカッション全文ダンプ |
+| `kaggle_trt_t4_runbook.md` | Kaggle T4 での TensorRT 変換テスト手順 |
+| `openrouter/` | OpenRouter 残高監視（任意） |
+| `xangi/` | xangi + Discord で bot を回すときの**オプション**一式（supervisor・監視デーモン・使用率ゲージ・bot 間メンションの作法）。本体は無くても動く。本体スクリプトの通知は `XANGI_CMD` + `NOTIFY_CHANNEL` があるときだけ xangi 経由 |
 
 #### リファレンスコード（`reference/`）
 - PyTorch Lightning + timm + smp ベースの **2.5Dセグメンテーションテンプレート**
@@ -272,6 +300,8 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 - **日報** (`daily_reports/YYYYMMDD.md`): 全記録の中心。知見が出たら都度追記
 - **提出履歴** (`submit/SUBMISSIONS.md`): 全提出のCV/LBスコア・パラメータを記録
 - **claudeSummary.md**: 実験横断の知見・ベストスコア履歴を集約
+- **事前登録** (`templates/PREREG_TEMPLATE.md`): 数値を見る前に判定帯を凍結する
+- **タスクボード** (`taskboard/`): 外部依存なしのローカルチケット（`task.py`、ID は `O_EXCL` で確保）+ 生成物 `board.html` / `dashboard.html`。台帳は `knowledge/ledgers/`
 
 #### 学習コードの鉄則
 - AMP (Mixed Precision) 常にON
@@ -287,6 +317,7 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 ./
 ├── CLAUDE.md                         # Claude Code 指示書
 ├── KAGGLE_DIRECTION.md               # コンペ固有設定 + 設計意図
+├── AGENTS.md                         # 複数エージェントの同時作業ルール
 ├── claudeSummary.md                  # 実験横断の知見集約
 ├── myMemo.md                         # 個人メモ
 ├── LICENSE                           # MIT License
@@ -298,7 +329,7 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 │   └── en/                           # English
 ├── .claude/
 │   ├── agents/                       # Custom Agents (5種)
-│   └── skills/                       # Skills (7コマンド)
+│   └── skills/                       # Skills (8コマンド)
 ├── .github/
 │   └── workflows/                    # CI（ロケール同期チェック）
 ├── reference/                        # リファレンスコード (2.5D Seg)
@@ -306,8 +337,14 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 │   ├── kaggle_elapsed_time.py        # 提出監視
 │   ├── kaggle_upload.sh              # Dataset アップロード
 │   ├── kaggle_code_competition_submission.md  # Code Competition 提出ガイド
+│   ├── kaggle_submit_watch.sh / kaggle_submit_now.sh  # 確認してから提出
+│   ├── star.sh                       # ★番号の払い出し（flock）
 │   ├── git-hooks/                    # 秘密混入を止める pre-commit フック (+ install.sh)
-│   └── runpod/                       # 外部GPU(RunPod)運用ガイド + スクリプト
+│   ├── runpod/                       # 外部GPU(RunPod)運用ガイド + スクリプト
+│   ├── openrouter/                   # OpenRouter 残高監視（任意）
+│   └── xangi/                        # xangi + Discord の bot 運用（任意）
+├── taskboard/                        # ローカルチケット（task.py）+ board/dashboard 生成
+├── templates/                        # PREREG / SESSION_NOTES / 日報 / 台帳 の雛形
 ├── submit/
 │   └── SUBMISSIONS.md                # 提出履歴
 ├── datasets/                         # コンペデータ
@@ -318,6 +355,7 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 ├── knowledge/                        # ナレッジWiki（ストック層）
 │   ├── INDEX.md                      #   検索用目次（まずこれを見る）
 │   ├── technique/ data/ error/ decision/
+│   ├── ledgers/                      #   run・データ版・実験・★ の台帳
 │   └── _template.md
 ├── daily_reports/                    # 日報（フロー層）
 └── workspace/                        # 実験フォルダ
@@ -339,6 +377,7 @@ bash rundocker.sh       # リポジトリをマウントしてコンテナ起動
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v2.8.0 | 2026-10-18 | **Multi-agent operations from a 2-month real run (1 human + 2 bots).** Add `AGENTS.md` (rules 1–16: write areas, ★ allocation with `flock`, git/submit lanes, no submit retries, PID-based kill, independent recomputation, sha256-committed blind audits, reference value ≠ control, 4 elements of a claim, detach-and-verify, daily commits). CLAUDE.md gains a 🔑 secrets section and a PREREG rule. New tools: confirm-then-submit (`kaggle_submit_watch.sh` / `kaggle_submit_now.sh`, pins its own submission ref), `star.sh`, `launch_once.sh`, `ensure_env.sh`, `deadline_countdown.py`, Kaggle notebook/discussion watchers, RunPod `rp_ssh.sh` / `rp_key_guard.sh` / `rp_credit_watch.sh`, OpenRouter balance watch; optional `tools/xangi/` module. New `taskboard/` (local tickets + dashboard), `templates/`, `knowledge/ledgers/`, `/probing` skill. Hooks: SessionStart only loads date-named reports (no cross-agent reads), SessionEnd dates by UTC+offset (default JST) instead of container TZ. `smoke_test.sh` checks `--stop-after` support (removed in runpodctl 2.14) |
 | v2.7.2 | 2026-06-20 | **Per-project conversation-history isolation in `rundocker.sh`.** With the shared `~/.claude-docker` mount, every container could read every other project's Claude history/memory (`~/.claude/projects/` showed all projects). Now history/memory is isolated to `<work-folder>/.claude-data/projects/` (gitignored) while auth (`.credentials.json`) stays shared; on first run the project's existing history is migrated from the shared dir. The project key is derived from the in-container cwd via `sed 's/[^a-zA-Z0-9]/-/g'` (a naive `-work-$NAME` mismatches on folder names containing `_`/`.`/spaces). Add `.claude-data/` to `.gitignore` |
 | v2.7.1 | 2026-06-18 | **Common rule: don't swallow errors.** Add an "Error-Handling Principles (Don't Swallow Errors)" section to CLAUDE.md — a careless `try/except` makes code "look like it works but is actually broken," hiding bugs; default to fail-fast, and catch only when recoverable + specific exception type + logged. `code-reviewer` agent gains a swallowed-exception check so the rule is enforced, not just stated. Synced across ja/en |
 | v2.7.0 | 2026-06-17 | **Simulation-competition support** (agent-vs-agent: Lux AI / ConnectX / Halite …). Add `reference_sim/` — a runnable reference (heuristic + alpha-beta search agents, a local match-evaluation harness with opponent-pool versioning as the "fold" analogue, a self-contained `submit_agent.py`, and a cwd-safe `run_local.sh` that auto-installs deps), worked on ConnectX via `kaggle_environments`. Extend the docs/skills/agents: onboarding gains simulation items (engine/observation/action/episode/rating/agent-I/F), a simulation phase guard (heuristic → search/RL → policy-ensemble), the fold section notes the opponent-pool analogue, a 4th submission track **(D) Simulation agent**, and `/submit-check` + `submission-validator` gain agent checks (self-contained / full-episode completion / timeout / illegal-move / stray-print). Synced across ja/en |

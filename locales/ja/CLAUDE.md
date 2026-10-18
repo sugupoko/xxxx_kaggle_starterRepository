@@ -4,6 +4,25 @@
 Kaggle だけでなく、grand-challenge.org / CodaBench / 独自プラットフォームなど **Kaggle 以外のコンペにも対応** する想定で運用します。
 **判断に迷ったら `KAGGLE_DIRECTION.md` の設計意図を確認すること。**（ファイル名は歴史的経緯で Kaggle のままですが、中身は汎用の設計原則として読む）
 
+> ⚠️ **複数エージェント（Claude + 他の bot）＋人間で同じ共有フォルダを触るときは、作業前に `AGENTS.md` を必ず読むこと。**
+> 要点: ①自分の接頭辞のフォルダにだけ書く ②`datasets/` `reference/` `workspace/fold/vNNN/` は read-only
+> ③日報は担当別ファイル、git コミットと Kaggle 提出は担当を 1 人に固定（レーン分け） ④領域外を触るときは宣言する
+> ⑤並列化の既定は手分けではなく**同じ成果物の独立再計算**。相手の数値は 4 要素（観測条件 / 推論状態 / 採否 gate / 再開条件）ごと受け取る
+> 1 エージェントで回すときも、`AGENTS.md` のルール 7〜12（提出の作法・独立再計算・盲検・主張の 4 要素）は効く。
+
+## 🔑 鍵・秘匿情報の取り扱い（厳守・最優先）
+
+API キー / トークン（RunPod API key, GitHub PAT, HuggingFace, Kaggle key, LLM API key 等）を扱うときは**絶対に**以下を守る。過去に `${VAR:-...}` の誤用で API key をチャットに出力し、ローテーションが必要になった事故がある。
+
+- **生値を出力しない**: チャット・ログ・コミットに鍵の値を出さない。存在確認は**真偽＋長さ＋先頭数文字だけ**（例 `[ -n "$VAR" ] && echo "set (${#VAR}文字, ${VAR:0:3}***)"`）
+- **値を出す構文を使わない**: `echo $VAR` / `${VAR:-...}`（unset 時以外は値を出す）/ `cat` で鍵ファイルを開く、を鍵に対して使わない
+- **保管場所**: ローカルは `*.env`（例 `.runpod.env`・gitignore 済）**のみ**。リモート（pod 等）へは生値でなく、プラットフォームの Secret 参照（RunPod なら `{{ RUNPOD_SECRET_x }}`）で渡す
+- **SSH 秘密鍵を一時的に使う場合**（ユーザーが許可したときのみ）: 鍵を ext4 上の一時領域にコピー → `chmod 600` → ssh/scp に使用 → **使用直後に必ず削除**。`-F /dev/null` で壊れた `~/.ssh/config` を回避する（WSL の 9p マウント上の `~/.ssh` はパーミッションが 777 のままで ssh に拒否されるため、一時コピーが必要）
+- **課金が発生する操作**（pod create 等）は**事前にユーザー確認**
+- **コミット防止**: `kaggle.json` / `*.key` / `*.pem` / `*.env` は `.gitignore` 済。push 前に `git check-ignore` で確認
+- **漏れたら即ローテーション**: 万一値が露出したら、revoke → 再発行 → `*.env` 貼替 をユーザーに促す
+- RunPod 固有の運用（一時 SSH 鍵ワークフロー・鍵ガード）は `tools/runpod/README.md`
+
 ## Opus (1M context) を使う前提のメタルール
 
 このテンプレートは **Claude Opus (1M context)** で運用することを前提にしている。1M コンテキストを活かすため、以下を**遠慮せず**やってよい:
@@ -88,6 +107,7 @@ simulation には固定 CV が無いので、各フェーズの「進捗判定�
 - Claude用: `expA00_baseline` (アルファベット+数字2桁)、人間用: `exp200_name` (数字3桁)
 - 各実験フォルダには必ず `SESSION_NOTES.md` を作成する
 - 大きく方針が変わる時だけ新しいexp番号にする。微調整は同じフォルダ内で
+- 結果を見てから判定基準を動かさないよう、比較実験は **数値を見る前に判定帯を凍結**する（`templates/PREREG_TEMPLATE.md` で事前登録。雛形一覧は `templates/README.md`）
 - 結果・知見・戦略はすべて日報 `daily_reports/YYYYMMDD.md` に集約する（個別planファイルは作らない）
 
 ## 学習コードの鉄則
@@ -350,8 +370,8 @@ submit/v001_expA00_heuristic/
 
 `.claude/settings.json` に以下が設定されている。`/hooks` で確認・編集可能:
 
-- **SessionStart**: 最新の日報（`daily_reports/[0-9]*.md` の最新）と `knowledge/INDEX.md`（ナレッジ目次）を context に自動注入する。セッション開始時に状況把握とストック知識の所在把握をスキップしないため
-- **SessionEnd**: セッション終了時に今日の日報があれば `<!-- session ended: ... -->` マーカーを追記する。日次の作業ログを残すため（応答完了のたびに発火する Stop ではなく SessionEnd を使う）
+- **SessionStart**: 最新の日報（`daily_reports/YYYYMMDD.md` の日付が最も新しいもの。複数エージェント運用で他の担当の `YYYYMMDD_B.md` 等を誤って読まないよう日付ファイルだけを対象にし、同日の他担当の日報はファイル名だけ表示する。Agent B 側は環境変数 `DAILY_REPORT_SUFFIX=_B` で自分の日報を読む）と `knowledge/INDEX.md`（ナレッジ目次）を context に自動注入する。セッション開始時に状況把握とストック知識の所在把握をスキップしないため
+- **SessionEnd**: セッション終了時に今日の日報があれば `<!-- session ended: ... -->` マーカーを追記する。日次の作業ログを残すため（応答完了のたびに発火する Stop ではなく SessionEnd を使う）。「今日」は **UTC + `REPORT_TZ_OFFSET_HOURS`（既定 9 = JST）** で決める（コンテナは UTC 時計で `TZ=Asia/Tokyo` も zoneinfo が無いと効かず、JST 0〜9 時に前日の日報へ書いてしまうため）
 
 ## 利用可能なSkills
 
@@ -361,6 +381,7 @@ submit/v001_expA00_heuristic/
 - `/submit-check <path>` - 提出物の事前検証（Kaggle CSV / 予測ファイル zip / Docker / Simulation エージェント）。提出直前に必ず使う
 - `/strategy [追加観点]` - 横断 synthesis を実行。`competition-strategist` agent が全 daily_report + SESSION_NOTES + claudeSummary を一括ロードして次の一手を出す。週1回や CV 頭打ち時
 - `/survey-papers [キーワード]` - 論文・解法調査（`context: fork` でメインコンテキストを汚さない）
+- `/probing [指標]` - Leaderboard probing。問題設定から可能な probing（値 / 構造 / 混同行列 / ID）を診断してから安全に実行。提出枠とルール確認が前提。行単位 probing は原則やらない
 - `/wiki [add|find|promote|consolidate]` - コンペ知識を `knowledge/` ストック層（原子ページ + INDEX）に蓄積・検索・整理。daily_report のフローから蒸留して昇格。知見が出たとき・週次整理・過去知見を引きたいとき
 
 ## Custom Agents
